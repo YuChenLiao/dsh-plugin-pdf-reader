@@ -50,6 +50,7 @@
   ],
   "license": "MIT",
   "dependencies": {
+    "@hyzyla/pdfium": "^3.0.0",
     "@opendataloader/pdf": "^2.5.20"
   }
 }

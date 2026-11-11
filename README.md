@@ -11,7 +11,7 @@
 | 工具层 | `dsh-plugin-pdf-reader` | 注册工具、提供 `ctx.pdfEngines` | 开 |
 | fast | `dsh-plugin-pdf-reader/fast` | OpenDataLoader（JVM）+ `--to-stdout` | 开（运行时探测 Java 17+） |
 | hybrid | `dsh-plugin-pdf-reader/hybrid` | docling 后端 | **关**（开启需同意模型下载） |
-| fallback | `dsh-plugin-pdf-reader/fallback` | pdfium WASM | 开（阶段 5 接入） |
+| fallback | `dsh-plugin-pdf-reader/fallback` | pdfium WASM | 开 |
 
 选择链按 priority 升序取第一个可用引擎：`hybrid(10) → fast(20) → fallback(90)`。
 
@@ -62,7 +62,7 @@ dsh --profile memtest --dump-config | grep pdf-reader   # 确认四条装载行
 - [x] 阶段 2 指标与分布（25 份样本，见 `docs/metrics-distribution.md`）
 - [x] 阶段 3 判定与分流（阈值来自 25 份样本分布）
 - [x] 阶段 4 `pdf_read`（按页/区间读缓存，超 maxChars 截断并标注剩余页）
-- [ ] 阶段 5 fallback 引擎
+- [x] 阶段 5 fallback 引擎（pdfium WASM，无 JVM 也能用）
 - [ ] 阶段 6 hybrid 引擎
 - [ ] 阶段 7 接入日常会话的 `web` profile
 

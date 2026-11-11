@@ -12,8 +12,37 @@ import type { RunResult } from './proc.ts'
 /** 上游版本，精确锁；同时是缓存键里的引擎指纹。 */
 export const UPSTREAM_VERSION = '2.5.20'
 
-/** 页分隔符。`%page-number%` 由上游替换为原文页码，不重编号。 */
+/** 页分隔符模板。`%page-number%` 由上游替换为原文页码，不重编号。 */
 export const PAGE_SEPARATOR = '<!-- PAGE %page-number% -->'
+
+/**
+ * 生成真实页标记（上游 CLI 自己替换模板，兜底引擎要自己拼）。
+ * @param page - 原文页码，1 起。
+ * @returns 与上游一致的标记文本。
+ */
+export function pageMarker(page: number): string {
+  return PAGE_SEPARATOR.replace('%page-number%', String(page))
+}
+
+/**
+ * 解析 "1,3,5-7" 形式的页范围。
+ * @param range - 页范围写法。
+ * @param total - 总页数，用于夹取越界值。
+ * @returns 命中页码集合；写法非法时返回空集合。
+ */
+export function parsePageRange(range: string, total: number): Set<number> {
+  const pages = new Set<number>()
+  for (const part of range.split(',')) {
+    const piece = part.trim()
+    if (piece === '') continue
+    const match = /^(\d+)(?:\s*-\s*(\d+))?$/.exec(piece)
+    if (match === null) continue
+    const start = Math.max(1, Number.parseInt(match[1] as string, 10))
+    const end = Math.min(total, match[2] === undefined ? start : Number.parseInt(match[2], 10))
+    for (let page = start; page <= end; page += 1) pages.add(page)
+  }
+  return pages
+}
 
 const JAR_NAME = 'opendataloader-pdf-cli.jar'
 

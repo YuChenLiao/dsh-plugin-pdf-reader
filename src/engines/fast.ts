@@ -7,7 +7,7 @@ import { ENGINE_PRIORITY, EngineError, type Availability, type ConvertRequest, t
 import { attachEngine } from './attach.ts'
 import type { Ctx } from '../ctx.ts'
 
-export { buildConvertArgv, classifyFailure, PAGE_SEPARATOR, resolveJarPath, UPSTREAM_VERSION } from '../upstream.ts'
+export { buildConvertArgv, classifyFailure, PAGE_SEPARATOR, parsePageRange, resolveJarPath, UPSTREAM_VERSION } from '../upstream.ts'
 
 export const name = 'dsh-plugin-pdf-reader/fast'
 
