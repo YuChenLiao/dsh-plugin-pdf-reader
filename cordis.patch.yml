@@ -20,7 +20,7 @@
         # 截成"头 4096 + 尾 1024"，中间正文静默消失。
         inlineLimit: 6000
         # 阶段 2 校准完成前保持 false，verdict 恒为 unknown。
-        judgeEnabled: false
+        judgeEnabled: true
         # javaBinary: java
         # cacheDir: ~/.dsh/pdf-cache
 

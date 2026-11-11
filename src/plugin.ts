@@ -27,6 +27,7 @@ export {
   writeEntry,
 } from './cache.ts'
 export { computeMetrics, estimateTokens, splitPages } from './metrics.ts'
+export { judge, thresholdsOf, SUSPECT_WEIGHTS, FAST_THRESHOLDS, FALLBACK_THRESHOLDS, HYBRID_THRESHOLDS } from './verdict.ts'
 
 export const name = 'dsh-plugin-pdf-reader'
 export const inject = ['tools']
@@ -44,7 +45,7 @@ export const CONFIG_DEFAULTS: PluginConfig = {
   enabled: true,
   inlineLimit: 6000,
   cacheDir: '~/.dsh/pdf-cache',
-  judgeEnabled: false,
+  judgeEnabled: true,
   javaBinary: 'java',
 }
 

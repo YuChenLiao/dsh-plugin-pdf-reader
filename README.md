@@ -20,7 +20,7 @@
 | 工具 | 状态 | 说明 |
 | --- | --- | --- |
 | `pdf_ping` | 已实现 | 环境体检：Java 版本、各引擎可用性与原因 |
-| `pdf_extract` | 已实现，判定待阶段 3 | 转换 + 指标；小文件返正文，大文件返判定块 |
+| `pdf_extract` | 已实现 | 转换 + 指标 + 三档判定；小文件返正文，大文件返判定块 |
 | `pdf_read` | 阶段 4 | 按句柄 + 页范围读缓存正文 |
 
 ## 配置
@@ -31,7 +31,7 @@
 | --- | --- | --- |
 | `enabled` | `true` | 总开关 |
 | `inlineLimit` | `6000` | 入上下文字符上限。**硬顶 8192** —— 超过会被 dsh 的 `tool-result-pruner` 截成"头 4096 + 尾 1024"，中间正文静默消失 |
-| `judgeEnabled` | `false` | 阈值校准完成前保持 false |
+| `judgeEnabled` | `true` | 关闭后退回"只记录指标、不判定" |
 | `cacheDir` | `~/.dsh/pdf-cache` | 转换结果与指标落盘位置 |
 | `javaBinary` | `java` | fast 引擎用的可执行文件 |
 
@@ -60,7 +60,7 @@ dsh --profile memtest --dump-config | grep pdf-reader   # 确认四条装载行
 - [x] 阶段 0 骨架：工具层、引擎注册表、`pdf_ping`
 - [x] 阶段 1 转换（fast）：`ctx.subprocess` + `--to-stdout`，abort 后整树退出
 - [x] 阶段 2 指标与分布（25 份样本，见 `docs/metrics-distribution.md`）
-- [ ] 阶段 3 判定与分流
+- [x] 阶段 3 判定与分流（阈值来自 25 份样本分布）
 - [ ] 阶段 4 `pdf_read`
 - [ ] 阶段 5 fallback 引擎
 - [ ] 阶段 6 hybrid 引擎

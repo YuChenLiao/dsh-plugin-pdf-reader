@@ -3,6 +3,7 @@ import { stat } from 'node:fs/promises'
 import { isAbsolute, resolve as resolvePath } from 'node:path'
 import { cacheKey, expandHome, lookupFile, paramsSignature, sha256File, writeEntry, type CacheMeta, type CacheParams } from '../cache.ts'
 import { computeMetrics, estimateTokens, type Metrics } from '../metrics.ts'
+import { judge } from '../verdict.ts'
 import { PAGE_SEPARATOR } from '../upstream.ts'
 import type { EngineError, EngineRegistry } from '../engines.ts'
 import type { PluginConfig } from '../plugin.ts'
@@ -75,7 +76,10 @@ function toValue(meta: Pick<CacheMeta, 'handle' | 'engine' | 'degraded' | 'verdi
   if (mode === 'spilled') value.tokens_est = estimateTokens(meta.chars)
   if (meta.stats !== undefined) value.stats = meta.stats
   if (meta.issues !== undefined && meta.issues.length > 0) value.issues = meta.issues
-  if (value.verdict === 'suspect') value.suggest = `pdf_read(handle='${meta.handle}', page=${Math.min(meta.pages, 1)})`
+  if (value.verdict === 'suspect' && (meta.stats?.nonspace_chars ?? 0) > 0) {
+    const page = (meta.stats?.first_empty_page ?? 0) > 0 ? meta.stats.first_empty_page : 1
+    value.suggest = `pdf_read(handle='${meta.handle}', page=${page})`
+  }
   if (mode === 'inline') value.content = body
   return value
 }
@@ -140,6 +144,7 @@ export function createExtractTool(deps: ExtractDeps): ToolDefinitionLike {
       const engine = await deps.registry.select(exec.signal)
       const converted = await engine.convert({ absPath, ...(params.pages === undefined ? {} : { pages: params.pages }), signal: exec.signal })
       const metrics: Metrics = computeMetrics(converted.markdown)
+      const judgment = judge(metrics, converted.engine, deps.config.judgeEnabled)
 
       const handle = cacheKey(fileSha256, converted.engine, converted.engineVersion, params)
       const meta: CacheMeta = {
@@ -166,11 +171,17 @@ export function createExtractTool(deps: ExtractDeps): ToolDefinitionLike {
           line_end_punct_ratio: round(metrics.line_end_punct_ratio),
           page_char_variance: round(metrics.page_char_variance),
           empty_pages: metrics.empty_pages,
+          empty_page_ratio: round(metrics.empty_page_ratio),
+          head_cjk_ratio: round(metrics.head_cjk_ratio),
+          nonspace_chars: metrics.nonspace_chars,
+          first_empty_page: metrics.first_empty_page,
           last_page_ratio: round(metrics.last_page_ratio),
           tables: metrics.tables,
           headings: metrics.headings,
         },
-        verdict: deps.config.judgeEnabled ? 'ok' : 'unknown',
+        verdict: judgment.verdict,
+        ...(judgment.issues.length > 0 ? { issues: judgment.issues } : {}),
+        ...(judgment.verdict === 'suspect' ? { score: judgment.score } : {}),
       }
       await writeEntry(cacheDir, { handle, body: converted.markdown, meta })
       return toValue(meta, converted.markdown, inlineLimit)

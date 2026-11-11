@@ -10,8 +10,12 @@ const PAGE_SEPARATOR = /<!--\s*PAGE\s+\d+\s*-->/g
 export interface Metrics {
   /** 字符总数（不含页分隔符）。 */
   chars: number
+  /** 非空白字符数：只有空白等于"没提取到任何内容"。 */
+  nonspace_chars: number
   /** 页数（按分隔符切分）。 */
   pages: number
+  /** 首部 2000 字符的 CJK 占比：用来区分"本该是中文却提取成乱码"与"本来就是英文文档"。 */
+  head_cjk_ratio: number
   replacement_ratio: number
   control_ratio: number
   private_use_ratio: number
@@ -23,6 +27,8 @@ export interface Metrics {
   page_char_variance: number
   empty_pages: number
   empty_page_ratio: number
+  /** 第一个空页的页码（1 起）；没有则为 0。用于 suggest 指向该页。 */
+  first_empty_page: number
   last_page_ratio: number
   tables: number
   headings: number
@@ -105,7 +111,9 @@ export function computeMetrics(markdown: string): Metrics {
 
   return {
     chars,
+    nonspace_chars: nonSpace.length,
     pages: pageTexts.length,
+    head_cjk_ratio: ratio(countCjk(text.slice(0, 2000).replace(/\s/g, '')), text.slice(0, 2000).replace(/\s/g, '').length),
     replacement_ratio: ratio(replacementChars, chars),
     control_ratio: ratio(controlChars, chars),
     private_use_ratio: ratio(privateUse, chars),
@@ -117,6 +125,7 @@ export function computeMetrics(markdown: string): Metrics {
     page_char_variance: cv,
     empty_pages: emptyPages,
     empty_page_ratio: emptyPageRatio,
+    first_empty_page: pageLengths.findIndex((length) => length < 20) + 1,
     last_page_ratio: lastPageRatio,
     tables,
     headings,

@@ -221,9 +221,9 @@ handle=3f2a91c8
 
 | 引擎 | failed 判定 | suspect 判定 | tables/headings |
 | --- | --- | --- | --- |
-| fast | 全套三个条件 | 任务书 §6 原本的五条 | 有效计数 |
+| fast | 全套三个条件 | 五条，按 25 份样本校准：`cjk_ratio<0.25`（前置首部 CJK≥5%）、`avg_chars_per_line<5`、`single_char_line_ratio>0.30`、`empty_page_ratio>0.20`、`last_page_ratio<0.05`（仅当每页≥100 字符） | 有效计数 |
 | hybrid | 全套三个条件 | 同 fast，阈值可更严 | 有效计数 |
-| fallback | 仅 `chars == 0` 与 `replacement_ratio > 0.005` | **不判定** | 省略（不输出 null，见 §15.4） |
+| fallback | `replacement_ratio > 0.005` 或 `control_ratio > 0.02`；无文本时判 `suspect`（扫描件） | **不判定** | 省略（不输出 null，见 §15.4） |
 
 fallback 不判 suspect 的理由：它的阅读顺序按 PDF 绘制顺序，`avg_chars_per_line`、`single_char_line_ratio`、`cjk_ratio` 会成片失真，沿用同一套阈值必然误报。
 
