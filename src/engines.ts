@@ -29,6 +29,7 @@ export interface ConvertResult {
 
 export type FailureCause =
   | 'not-pdf'
+  | 'missing-file'
   | 'corrupted'
   | 'encrypted'
   | 'aborted'

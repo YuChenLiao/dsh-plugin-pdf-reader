@@ -27,7 +27,7 @@ test('apply 注册 pdf_ping 并提供 pdfEngines', () => {
     return () => {}
   }
   apply(ctx, {})
-  assert.deepEqual(registered.map((d) => d.name), ['pdf_ping'])
+  assert.deepEqual(registered.map((d) => d.name), ['pdf_ping', 'pdf_extract'])
   assert.deepEqual(provided.map(([key]) => key), ['pdfEngines'])
   assert.equal(typeof provided[0][1].register, 'function')
 })

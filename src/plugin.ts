@@ -4,6 +4,7 @@
  */
 import { createEngineRegistry, type EngineRegistry } from './engines.ts'
 import { createPingTool } from './tools/ping.ts'
+import { createExtractTool } from './tools/extract.ts'
 import type { Ctx } from './ctx.ts'
 
 // 便于测试与外部复用；函数插件不能有 default export，这些具名导出不冲突。
@@ -11,8 +12,21 @@ export { createEngineRegistry, EngineError, ENGINE_PRIORITY } from './engines.ts
 export type { EngineName, EngineRegistry, PdfEngine, ConvertRequest, ConvertResult } from './engines.ts'
 export { createPingTool } from './tools/ping.ts'
 export type { PingValue } from './tools/ping.ts'
+export { createExtractTool } from './tools/extract.ts'
+export type { ExtractValue } from './tools/extract.ts'
 export { parseJavaVersion, detectJava } from './probe/java.ts'
 export { runProcess } from './proc.ts'
+export {
+  cacheKey,
+  expandHome,
+  lookupFile,
+  paramsSignature,
+  readEntry,
+  recentHandles,
+  sha256File,
+  writeEntry,
+} from './cache.ts'
+export { computeMetrics, estimateTokens, splitPages } from './metrics.ts'
 
 export const name = 'dsh-plugin-pdf-reader'
 export const inject = ['tools']
@@ -95,6 +109,7 @@ export function apply(ctx: Ctx, config: unknown): void {
   ctx.provide?.('pdfEngines', registry)
 
   ctx.tools.register(createPingTool({ ctx, registry, javaBinary: cfg.javaBinary }))
+  ctx.tools.register(createExtractTool({ ctx, registry, config: cfg }))
 
   const logger = typeof ctx.logger === 'function'
     ? (ctx.logger as (scope: string) => { info(...a: unknown[]): void } | undefined)('pdf-reader')

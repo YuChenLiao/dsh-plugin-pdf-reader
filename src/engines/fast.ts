@@ -1,5 +1,5 @@
 /** fast 引擎：OpenDataLoader（JVM）+ `--to-stdout` → Markdown。 */
-import { dirname } from 'node:path'
+import { dirname, isAbsolute, resolve as resolvePath } from 'node:path'
 import { detectJava } from '../probe/java.ts'
 import { runProcess, type RunResult, type RunSpec } from '../proc.ts'
 import { buildConvertArgv, classifyFailure, resolveJarPath, UPSTREAM_VERSION } from '../upstream.ts'
@@ -49,9 +49,11 @@ export function createFastEngine(ctx: Ctx, cfg: FastConfig, deps: FastDeps = {})
       const jar = jarOf()
       if (jar === null) throw new EngineError('unavailable', `未安装 @opendataloader/pdf@${UPSTREAM_VERSION}`)
 
+      // 相对路径必须在这里补绝对化：cwd 会被设成文件所在目录，用相对路径会二次拼接
+      const input = isAbsolute(request.absPath) ? request.absPath : resolvePath(request.absPath)
       const result = await run({
-        argv: buildConvertArgv(cfg.javaBinary, jar, { input: request.absPath, ...(request.pages === undefined ? {} : { pages: request.pages }) }),
-        cwd: dirname(request.absPath),
+        argv: buildConvertArgv(cfg.javaBinary, jar, { input, ...(request.pages === undefined ? {} : { pages: request.pages }) }),
+        cwd: dirname(input),
         timeoutMs: cfg.timeoutMs,
         signal: request.signal,
         // 24MB jar 起 JVM 后被杀要给足回收时间，避免留下半个 java

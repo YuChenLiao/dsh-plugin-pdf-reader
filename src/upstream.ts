@@ -79,6 +79,7 @@ const STDERR_TAIL = 2048
 export function classifyFailure(result: Pick<RunResult, 'code' | 'stdout' | 'stderr'>): FailureClass {
   const text = `${result.stderr}\n${result.stdout}`
   const tail = result.stderr.trim().slice(-STDERR_TAIL)
+  if (/File or folder .* not found|No such file/i.test(text)) return { kind: 'missing-file', message: `路径不存在：${tail}` }
   if (/is not a PDF file/i.test(text)) return { kind: 'not-pdf', message: `不是 PDF 文件：${tail}` }
   if (/not a valid PDF file|corrupted or truncated/i.test(text)) return { kind: 'corrupted', message: `PDF 损坏或截断：${tail}` }
   if (/password|encrypted/i.test(text)) return { kind: 'encrypted', message: `PDF 已加密，需要密码：${tail}` }

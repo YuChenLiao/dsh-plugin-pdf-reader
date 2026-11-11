@@ -99,3 +99,23 @@ test('jar 缺失时 available 关闭且 convert 报 unavailable', async () => {
     return true
   })
 })
+
+test('相对路径在引擎内补绝对化，cwd 用文件所在目录', async () => {
+  const seen = []
+  const engine = createFastEngine(
+    { tools: { register: () => () => {} } },
+    resolveFastConfig({}),
+    { jarOf: () => JAR, run: async (spec) => { seen.push(spec); return { code: 0, stdout: 'x', stderr: '', timedOut: false, aborted: false } } },
+  )
+  await engine.convert({ absPath: 'fixtures/samples/a.pdf', signal: new AbortController().signal })
+  const inputArg = String(seen[0].argv[5])
+  assert.ok(inputArg.endsWith('a.pdf'))
+  assert.ok(inputArg === 'fixtures/samples/a.pdf' || inputArg.startsWith('/') || /^[A-Za-z]:/.test(inputArg), '输入路径应是绝对路径')
+  assert.ok(seen[0].cwd.endsWith('samples'), 'cwd 应是文件所在目录')
+})
+
+test('上游报 File or folder not found 时归类为 missing-file', () => {
+  const result = classifyFailure({ code: 1, stdout: '', stderr: "警告: File or folder 'cn-text-1p.pdf' not found." })
+  assert.equal(result.kind, 'missing-file')
+  assert.match(result.message, /路径不存在/)
+})
