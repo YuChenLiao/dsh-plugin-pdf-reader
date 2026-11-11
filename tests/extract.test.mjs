@@ -173,3 +173,11 @@ test('零文本扫描件不把空页标记当正文返回', async () => {
   assert.equal(value.verdict, 'suspect')
   assert.equal(value.content, undefined, '空页标记不该当正文塞进上下文')
 })
+
+test('零文本扫描件的 render 不再提示去读 pdf_read', async () => {
+  const { tool, file } = await fixtureWithHybrid(page(1, ''))
+  const value = await tool.execute({ path: file }, signal())
+  const text = tool.output.render({}, value)[0].text
+  assert.ok(!text.includes('用 pdf_read 按页读取'))
+  assert.match(text, /没有提取到文本/)
+})

@@ -127,6 +127,7 @@ export function createExtractTool(deps: ExtractDeps): ToolDefinitionLike {
         for (const issue of value.issues ?? []) lines.push(`- ${issue}`)
         if (value.suggest !== undefined) lines.push(`下一步：${value.suggest}`)
         if (value.content !== undefined) lines.push('', value.content)
+        else if (value.verdict === 'suspect' || value.verdict === 'failed') lines.push('本引擎没有提取到文本，pdf_read 也读不到内容')
         else lines.push('正文未进上下文：用 pdf_read 按页读取')
         return [{ type: 'text', text: lines.join('\n') }]
       },
