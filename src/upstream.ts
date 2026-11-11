@@ -64,6 +64,8 @@ export function resolveJarPath(): string | null {
 export interface ConvertArgvRequest {
   input: string
   pages?: string
+  /** 额外透传给上游 buildArgs 的选项（hybrid 用）。 */
+  extra?: Record<string, unknown>
 }
 
 /**
@@ -81,6 +83,7 @@ export function buildConvertArgv(javaBinary: string, jarPath: string, request: C
     imageOutput: 'off',
     toStdout: true,
     ...(request.pages === undefined ? {} : { pages: request.pages }),
+    ...(request.extra ?? {}),
   })
   return [
     javaBinary,

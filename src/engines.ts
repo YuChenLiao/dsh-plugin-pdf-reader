@@ -35,6 +35,7 @@ export type FailureCause =
   | 'aborted'
   | 'timeout'
   | 'engine-error'
+  | 'initializing'
   | 'unavailable'
 
 export class EngineError extends Error {
