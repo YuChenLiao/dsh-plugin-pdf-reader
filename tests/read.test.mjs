@@ -58,17 +58,26 @@ test('按区间读取拼接多页', async () => {
   assert.equal(value.to_page, 3)
 })
 
-test('超 maxChars 截断并标注剩余页范围', async () => {
+test('超 maxChars 截断并告诉模型怎么续读', async () => {
   const { tool, handle } = await seed(['x'.repeat(3000), 'y'.repeat(3000), 'z'.repeat(3000)])
   const value = await tool.execute({ handle, maxChars: 4000 }, signal())
   assert.equal(value.truncated, true)
   assert.ok(value.content.length <= 4000)
-  // 从第 2 页中间切开：剩余范围必须包含第 2 页的后半截
-  assert.equal(value.remaining_from, 2)
-  assert.equal(value.remaining_to, 3)
   const text = tool.output.render({}, value)[0].text
   assert.match(text, /已截断/)
-  assert.match(text, /剩余第/)
+  assert.match(text, /offset=|剩余第/)
+})
+
+test('单页比 maxChars 长时给 next_offset，续读能拿到下一段', async () => {
+  const { tool, handle } = await seed(['A'.repeat(500), 'B'.repeat(500)])
+  const first = await tool.execute({ handle, page: 1, maxChars: 100 }, signal())
+  assert.equal(first.truncated, true)
+  assert.equal(first.next_offset, 100)
+  const second = await tool.execute({ handle, page: 1, maxChars: 100, offset: first.next_offset }, signal())
+  assert.notEqual(second.content, first.content)
+  assert.ok(second.content.startsWith('A'.repeat(10)))
+  const text = tool.output.render({}, first)[0].text
+  assert.match(text, /offset=100/)
 })
 
 test('handle 不存在时报错并给出最近可用的 handle', async () => {

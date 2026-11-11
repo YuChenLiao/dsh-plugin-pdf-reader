@@ -166,3 +166,10 @@ test('扫描件判 suspect 时，若 hybrid 可用则提示用 hybrid 救场', a
   assert.equal(value.verdict, 'suspect')
   assert.match(value.suggest, /engine='hybrid'/)
 })
+
+test('零文本扫描件不把空页标记当正文返回', async () => {
+  const { tool, file } = await fixtureWithHybrid(page(1, ''))
+  const value = await tool.execute({ path: file }, signal())
+  assert.equal(value.verdict, 'suspect')
+  assert.equal(value.content, undefined, '空页标记不该当正文塞进上下文')
+})

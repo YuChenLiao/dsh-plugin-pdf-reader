@@ -148,3 +148,30 @@ pdf_read(page=13, maxChars=500) → b27982854e2a · 第 13 页（共 43 页，50
 ### 遗留
 
 宿主进程里跑的还是修复前的 `lib/`，需要重启一次才能吃到 `asNumber` 与 render 修正。
+
+## 2026-11-11 重启后复验 + 两处打磨
+
+重启后确认修复生效：
+
+```
+pdf_ping  → pong · java=17 (java) / 引擎: fast:ok · fallback:ok   （静态优先级表已去掉）
+pdf_read(handle=b27982854e2a, page=13, maxChars=400)
+          → b27982854e2a · 第 13 页（共 43 页，400 字符）          （字符串页码已被强转）
+pdf_extract(scan-8p.pdf) → pdf suspect · 8页 · 16字符
+```
+
+### 打磨 1：`pdf_read` 加 `offset`，让单页截断可续读
+
+原来单页比 `maxChars` 长时，模型只能重复调用 `pdf_read(page=13)`，每次都拿到同样的开头 —— 死循环。
+现在返回 `next_offset`，并在 render 里写明 `用 offset=N 续读`：
+
+```
+第一段（offset 0, maxChars 200）: "...ashkin, Vitaly Nikolaev, Matthew Lamm, M"  next_offset=200
+续读段（offset 200）           : "ichael Collins, Dipanjan Das, Slav Petrov, ..."
+```
+
+### 打磨 2：零文本扫描件不再把页标记当正文
+
+扫描件 16 个字符全是 `<!-- PAGE n -->` 标记，进上下文纯属浪费。现在 `nonspace_chars === 0` 时不返回 content。
+
+测试 103/103。

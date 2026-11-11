@@ -86,7 +86,8 @@ function toValue(meta: Pick<CacheMeta, 'handle' | 'engine' | 'degraded' | 'verdi
       value.suggest = `pdf_read(handle='${meta.handle}', page=${page})`
     }
   }
-  if (mode === 'inline') value.content = body
+  // 零文本（扫描件）时正文只有页标记，返回它纯属浪费上下文
+  if (mode === 'inline' && (meta.stats?.nonspace_chars ?? 1) > 0) value.content = body
   return value
 }
 
