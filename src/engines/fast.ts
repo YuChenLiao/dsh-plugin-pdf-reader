@@ -1,16 +1,15 @@
 /** fast 引擎：OpenDataLoader（JVM）+ `--to-stdout` → Markdown。 */
-import { existsSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { createRequire } from 'node:module'
+import { dirname } from 'node:path'
 import { detectJava } from '../probe/java.ts'
+import { runProcess, type RunResult, type RunSpec } from '../proc.ts'
+import { buildConvertArgv, classifyFailure, resolveJarPath, UPSTREAM_VERSION } from '../upstream.ts'
 import { ENGINE_PRIORITY, EngineError, type Availability, type ConvertRequest, type ConvertResult, type PdfEngine } from '../engines.ts'
 import { attachEngine } from './attach.ts'
 import type { Ctx } from '../ctx.ts'
 
-export const name = 'dsh-plugin-pdf-reader/fast'
+export { buildConvertArgv, classifyFailure, PAGE_SEPARATOR, resolveJarPath, UPSTREAM_VERSION } from '../upstream.ts'
 
-/** 上游版本，精确锁；进缓存键的引擎指纹之一。 */
-export const UPSTREAM_VERSION = '2.5.20'
+export const name = 'dsh-plugin-pdf-reader/fast'
 
 export interface FastConfig {
   enabled: boolean
@@ -25,22 +24,16 @@ export function resolveFastConfig(raw: unknown): FastConfig {
   return { enabled: input.enabled !== false, javaBinary, timeoutMs }
 }
 
-/**
- * 定位上游 jar。
- * @returns jar 绝对路径；未安装上游包时返回 null。
- */
-export function resolveJarPath(): string | null {
-  try {
-    const require = createRequire(import.meta.url)
-    const pkg = require.resolve('@opendataloader/pdf/package.json')
-    const jar = join(dirname(pkg), 'lib', 'opendataloader-pdf-cli.jar')
-    return existsSync(jar) ? jar : null
-  } catch {
-    return null
-  }
+/** 测试注入点：jar 定位与子进程执行。 */
+export interface FastDeps {
+  jarOf?: () => string | null
+  run?: (spec: RunSpec) => Promise<RunResult>
 }
 
-export function createFastEngine(ctx: Ctx, cfg: FastConfig, jarOf: () => string | null = resolveJarPath): PdfEngine {
+export function createFastEngine(ctx: Ctx, cfg: FastConfig, deps: FastDeps = {}): PdfEngine {
+  const jarOf = deps.jarOf ?? resolveJarPath
+  const run = deps.run ?? ((spec: RunSpec) => runProcess(ctx, spec))
+
   return {
     name: 'fast',
     priority: ENGINE_PRIORITY.fast,
@@ -52,8 +45,28 @@ export function createFastEngine(ctx: Ctx, cfg: FastConfig, jarOf: () => string 
       if (!java.ok) return { ok: false, reason: java.reason ?? 'Java 不可用' }
       return { ok: true }
     },
-    async convert(_request: ConvertRequest): Promise<ConvertResult> {
-      throw new EngineError('unavailable', 'fast 引擎的转换在阶段 1 实现')
+    async convert(request: ConvertRequest): Promise<ConvertResult> {
+      const jar = jarOf()
+      if (jar === null) throw new EngineError('unavailable', `未安装 @opendataloader/pdf@${UPSTREAM_VERSION}`)
+
+      const result = await run({
+        argv: buildConvertArgv(cfg.javaBinary, jar, { input: request.absPath, ...(request.pages === undefined ? {} : { pages: request.pages }) }),
+        cwd: dirname(request.absPath),
+        timeoutMs: cfg.timeoutMs,
+        signal: request.signal,
+        // 24MB jar 起 JVM 后被杀要给足回收时间，避免留下半个 java
+        graceMs: 5000,
+      })
+
+      if (result.aborted) throw new EngineError('aborted', '转换被取消')
+      if (result.timedOut) throw new EngineError('timeout', `fast 引擎转换超时（${cfg.timeoutMs}ms）`)
+      if (result.code !== 0) {
+        const failure = classifyFailure(result)
+        throw new EngineError(failure.kind, failure.message)
+      }
+      if (result.stdout.trim() === '') throw new EngineError('engine-error', '转换成功但没有任何输出（疑似扫描件或空文档）')
+
+      return { markdown: result.stdout, engine: 'fast', engineVersion: UPSTREAM_VERSION, degraded: false }
     },
   }
 }

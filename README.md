@@ -20,7 +20,7 @@
 | 工具 | 状态 | 说明 |
 | --- | --- | --- |
 | `pdf_ping` | 已实现 | 环境体检：Java 版本、各引擎可用性与原因 |
-| `pdf_extract` | 阶段 1–3 | 转换 + 判定；小文件返正文，大文件返判定块 |
+| `pdf_extract` | 阶段 2–3 | 转换 + 判定；小文件返正文，大文件返判定块 |
 | `pdf_read` | 阶段 4 | 按句柄 + 页范围读缓存正文 |
 
 ## 配置
@@ -58,7 +58,7 @@ dsh --profile memtest --dump-config | grep pdf-reader   # 确认四条装载行
 ## 阶段状态
 
 - [x] 阶段 0 骨架：工具层、引擎注册表、`pdf_ping`
-- [ ] 阶段 1 转换（fast）
+- [x] 阶段 1 转换（fast）：`ctx.subprocess` + `--to-stdout`，abort 后整树退出
 - [ ] 阶段 2 指标与分布
 - [ ] 阶段 3 判定与分流
 - [ ] 阶段 4 `pdf_read`

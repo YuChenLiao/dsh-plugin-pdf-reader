@@ -48,5 +48,8 @@
     "deepseek-harness",
     "pdf"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "@opendataloader/pdf": "^2.5.20"
+  }
 }
