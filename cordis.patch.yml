@@ -33,6 +33,12 @@
 
     # 引擎：docling 后端。默认关闭。开启前必须把 acceptModelDownload 设为 true，
     # 否则装载期报错并说明需要下载模型、启动后端。
+    #
+    # 本引擎**不进自动链**（实测 8–10s/页；扫描件 + OCR 约 25s/页），
+    # 只能用 pdf_extract(..., engine: 'hybrid') 显式调用。
+    #
+    # backendArgs 用来开 OCR：默认 easyocr 的语言不含中文，扫描件要加
+    #   backendArgs: ['--force-ocr', '--ocr-engine', 'easyocr', '--ocr-lang', 'ch_sim,en']
     - id: dsh-plugin-pdf-reader-hybrid
       name: dsh-plugin-pdf-reader/hybrid
       disabled: true
@@ -42,6 +48,8 @@
         port: 5002
         autoStart: true
         timeoutMs: 600000
+        # backendBinary: opendataloader-pdf-hybrid   # pip --user 装的话要给绝对路径
+        # backendArgs: ['--force-ocr', '--ocr-engine', 'easyocr', '--ocr-lang', 'ch_sim,en']
 
     # 引擎：pdfium WASM 兜底。无 JVM 环境时最后一道。
     - id: dsh-plugin-pdf-reader-fallback

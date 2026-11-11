@@ -62,7 +62,7 @@ function spillOrInline(chars: number, inlineLimit: number): 'inline' | 'spilled'
   return chars <= inlineLimit ? 'inline' : 'spilled'
 }
 
-function toValue(meta: Pick<CacheMeta, 'handle' | 'engine' | 'degraded' | 'verdict' | 'pages' | 'chars' | 'stats' | 'issues' | 'score'>, body: string, inlineLimit: number): ExtractValue {
+function toValue(meta: Pick<CacheMeta, 'handle' | 'engine' | 'degraded' | 'verdict' | 'pages' | 'chars' | 'stats' | 'issues' | 'score' | 'sourcePath'>, body: string, inlineLimit: number, hybridUsable = false): ExtractValue {
   const mode = spillOrInline(meta.chars, inlineLimit)
   const value: ExtractValue = {
     mode,
@@ -76,9 +76,14 @@ function toValue(meta: Pick<CacheMeta, 'handle' | 'engine' | 'degraded' | 'verdi
   if (mode === 'spilled') value.tokens_est = estimateTokens(meta.chars)
   if (meta.stats !== undefined) value.stats = meta.stats
   if (meta.issues !== undefined && meta.issues.length > 0) value.issues = meta.issues
-  if (value.verdict === 'suspect' && (meta.stats?.nonspace_chars ?? 0) > 0) {
-    const page = (meta.stats?.first_empty_page ?? 0) > 0 ? meta.stats.first_empty_page : 1
-    value.suggest = `pdf_read(handle='${meta.handle}', page=${page})`
+  if (value.verdict === 'suspect') {
+    const noText = (meta.stats?.nonspace_chars ?? 0) === 0
+    if (noText && hybridUsable === true) {
+      value.suggest = `pdf_extract(path='${meta.sourcePath}', engine='hybrid')  # 扫描件：hybrid + OCR 约 25s/页`
+    } else if (!noText) {
+      const page = (meta.stats?.first_empty_page ?? 0) > 0 ? meta.stats.first_empty_page : 1
+      value.suggest = `pdf_read(handle='${meta.handle}', page=${page})`
+    }
   }
   if (mode === 'inline') value.content = body
   return value
@@ -93,6 +98,11 @@ export function createExtractTool(deps: ExtractDeps): ToolDefinitionLike {
       properties: {
         path: { type: 'string', description: 'PDF 绝对路径或工作区相对路径' },
         pages: { type: 'string', description: '页范围，如 1-10；省略为全部。页码是原文页码' },
+        engine: {
+          type: 'string',
+          enum: ['auto', 'fast', 'fallback', 'hybrid'],
+          description: '指定引擎。auto（默认）按 fast → fallback 顺序自动选；hybrid 慢（8–10s/页，扫描件 + OCR 约 25s/页）但能读复杂表格与扫描件，需显式指定',
+        },
         inlineLimit: { type: 'number', description: '入上下文字符上限，默认用配置值（6000），0 表示总是落盘' },
         force: { type: 'boolean', description: '忽略缓存重新转换', default: false },
       },
@@ -120,7 +130,7 @@ export function createExtractTool(deps: ExtractDeps): ToolDefinitionLike {
       },
     },
     async execute(rawArgs, exec) {
-      const args = rawArgs as { path?: unknown; pages?: unknown; inlineLimit?: unknown; force?: unknown }
+      const args = rawArgs as { path?: unknown; pages?: unknown; inlineLimit?: unknown; force?: unknown; engine?: unknown }
       if (typeof args.path !== 'string' || args.path.trim() === '') throw new Error('path 必填')
       const absPath = resolveInputPath(args.path)
       const info = await stat(absPath).catch(() => null)
@@ -135,13 +145,21 @@ export function createExtractTool(deps: ExtractDeps): ToolDefinitionLike {
         : deps.config.inlineLimit
       const cacheDir = expandHome(deps.config.cacheDir)
 
+      const hybridUsable = async (): Promise<boolean> => {
+        const probes = await deps.registry.probe(exec.signal)
+        return probes.some((probe) => probe.name === 'hybrid' && probe.ok)
+      }
+
       const fileSha256 = await sha256File(absPath)
       if (args.force !== true) {
         const hit = await lookupFile(cacheDir, fileSha256, params)
-        if (hit !== null) return toValue(hit.meta, hit.body, inlineLimit)
+        if (hit !== null) return toValue(hit.meta, hit.body, inlineLimit, hit.meta.verdict === 'suspect' ? await hybridUsable() : false)
       }
 
-      const engine = await deps.registry.select(exec.signal)
+      const requested = typeof args.engine === 'string' ? args.engine.trim() : 'auto'
+      const engine = requested === '' || requested === 'auto'
+        ? await deps.registry.select(exec.signal)
+        : await deps.registry.selectNamed(requested as 'fast' | 'fallback' | 'hybrid', exec.signal)
       const converted = await engine.convert({ absPath, ...(params.pages === undefined ? {} : { pages: params.pages }), signal: exec.signal })
       const metrics: Metrics = computeMetrics(converted.markdown)
       const judgment = judge(metrics, converted.engine, deps.config.judgeEnabled)
@@ -184,7 +202,8 @@ export function createExtractTool(deps: ExtractDeps): ToolDefinitionLike {
         ...(judgment.verdict === 'suspect' ? { score: judgment.score } : {}),
       }
       await writeEntry(cacheDir, { handle, body: converted.markdown, meta })
-      return toValue(meta, converted.markdown, inlineLimit)
+      const usable = meta.verdict === 'suspect' ? await hybridUsable() : false
+      return toValue(meta, converted.markdown, inlineLimit, usable)
     },
   }
 }

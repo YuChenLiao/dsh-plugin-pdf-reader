@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { backendUrlOf, createHybridEngine, probePort, readHybridState, resolveHybridConfig } from '../lib/hybrid.js'
+import { backendArgv, backendUrlOf, createHybridEngine, probePort, readHybridState, resolveHybridConfig } from '../lib/hybrid.js'
 
 const JAR = 'C:/x/lib/opendataloader-pdf-cli.jar'
 const ctx = { tools: { register: () => () => {} }, get: () => undefined }
@@ -129,4 +129,26 @@ test('dispose 停掉自己拉起的后端', async () => {
 
 test('probePort 对未监听端口返回 false', async () => {
   assert.equal(await probePort('127.0.0.1', 59999, 300), false)
+})
+
+test('backendArgs 透传进后端启动参数', () => {
+  const cfg = resolveHybridConfig({
+    enabled: true,
+    acceptModelDownload: true,
+    backendBinary: 'D:/py/opendataloader-pdf-hybrid.exe',
+    backendArgs: ['--force-ocr', '--ocr-lang', 'ch_sim,en'],
+  })
+  assert.deepEqual(backendArgv(cfg), [
+    'D:/py/opendataloader-pdf-hybrid.exe', '--port', '5002', '--force-ocr', '--ocr-lang', 'ch_sim,en',
+  ])
+})
+
+test('backendArgs 过滤非字符串项', () => {
+  const cfg = resolveHybridConfig({ backendArgs: ['--force-ocr', 42, '', '  '] })
+  assert.deepEqual(cfg.backendArgs, ['--force-ocr'])
+})
+
+test('hybrid 标记为 explicitOnly，不进自动链', async () => {
+  const { engine } = engineWith()
+  assert.equal(engine.explicitOnly, true)
 })

@@ -88,3 +88,50 @@ test('probe() 汇总每个引擎的可用性与原因', async () => {
   assert.match(probes[0].reason, /2\.5\.20/)
   assert.equal(probes[1].reason, undefined)
 })
+
+test('explicitOnly 引擎不进自动链，但可被 selectNamed 取到', async () => {
+  const registry = createEngineRegistry()
+  const slow = { ...engine('hybrid', 10, true), explicitOnly: true }
+  registry.register(slow)
+  registry.register(engine('fast', 20, true))
+  assert.equal((await registry.select()).name, 'fast')
+  assert.equal((await registry.selectNamed('hybrid')).name, 'hybrid')
+})
+
+test('selectNamed 对未注册或不可用的引擎给出明确原因', async () => {
+  const registry = createEngineRegistry()
+  registry.register(engine('fast', 20, false, '需要 Java 17+'))
+  await assert.rejects(registry.selectNamed('fast'), (error) => {
+    assert.equal(error.kind, 'unavailable')
+    assert.match(error.message, /需要 Java 17\+/)
+    return true
+  })
+  await assert.rejects(registry.selectNamed('hybrid'), /没有注册/)
+})
+
+test('probe 标出 explicitOnly', async () => {
+  const registry = createEngineRegistry()
+  registry.register({ ...engine('hybrid', 10, true), explicitOnly: true })
+  registry.register(engine('fast', 20, true))
+  const probes = await registry.probe()
+  assert.deepEqual(probes.map((p) => [p.name, p.explicitOnly]), [['hybrid', true], ['fast', false]])
+})
+
+test('失败结果会过期重试，成功结果长期缓存', async () => {
+  let ok = false
+  let probes = 0
+  const flaky = {
+    name: 'fast',
+    priority: 20,
+    version: 'v1',
+    async available() { probes += 1; return ok ? { ok: true } : { ok: false, reason: 'java 忙' } },
+    async convert() { throw new Error('not used') },
+  }
+  const registry = createEngineRegistry(0)
+  registry.register(flaky)
+  await assert.rejects(registry.select())
+  ok = true
+  assert.equal((await registry.select()).name, 'fast')
+  await registry.select()
+  assert.equal(probes, 2, '成功之后不再重复探测')
+})

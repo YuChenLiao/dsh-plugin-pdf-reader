@@ -38,6 +38,8 @@ export interface HybridConfig {
   javaBinary: string
   /** docling 后端可执行文件；可为绝对路径（venv 安装时用）。 */
   backendBinary: string
+  /** 额外传给后端的参数，如 ['--force-ocr', '--ocr-lang', 'ch_sim,en']。 */
+  backendArgs: string[]
 }
 
 class ConfigError extends Error {
@@ -79,6 +81,9 @@ export function resolveHybridConfig(raw: unknown): HybridConfig {
     healthTimeoutMs,
     javaBinary: typeof input.javaBinary === 'string' && input.javaBinary.trim() !== '' ? input.javaBinary : 'java',
     backendBinary: typeof input.backendBinary === 'string' && input.backendBinary.trim() !== '' ? input.backendBinary : BACKEND_BINARY,
+    backendArgs: Array.isArray(input.backendArgs)
+      ? input.backendArgs.filter((item): item is string => typeof item === 'string' && item.trim() !== '')
+      : [],
   }
 }
 
@@ -191,6 +196,8 @@ export function createHybridEngine(ctx: Ctx, cfg: HybridConfig, deps: HybridDeps
   return {
     name: 'hybrid',
     priority: ENGINE_PRIORITY.hybrid,
+    // 实测 8–10s/页（扫描件 + OCR 约 25s/页）：只接受显式调用，不进自动链
+    explicitOnly: true,
     version: UPSTREAM_VERSION,
     async available(signal): Promise<Availability> {
       if (!cfg.enabled) return { ok: false, reason: '组件已关闭（默认关闭）' }
@@ -245,6 +252,15 @@ export function createHybridEngine(ctx: Ctx, cfg: HybridConfig, deps: HybridDeps
   } as PdfEngine & { dispose(): void }
 }
 
+/**
+ * 后端的启动 argv。
+ * @param cfg - hybrid 配置。
+ * @returns 可执行文件 + 端口 + 额外参数（如 --force-ocr --ocr-lang ch_sim,en）。
+ */
+export function backendArgv(cfg: HybridConfig): string[] {
+  return [cfg.backendBinary, '--port', String(cfg.port), ...cfg.backendArgs]
+}
+
 /** 用 dsh 的 subprocess 服务拉起后端。 */
 function spawnBackend(ctx: Ctx, cfg: HybridConfig): { stop(): void } {
   const service = ctx.get?.('subprocess') as
@@ -252,7 +268,7 @@ function spawnBackend(ctx: Ctx, cfg: HybridConfig): { stop(): void } {
     | undefined
   if (service === undefined) throw new Error('没有 ctx.subprocess，无法拉起 docling 后端')
   const handle = service.spawn({
-    argv: [cfg.backendBinary, '--port', String(cfg.port)],
+    argv: backendArgv(cfg),
     cwd: process.cwd(),
     stdio: { stdin: 'ignore', stdout: 'inherit', stderr: 'inherit' },
     graceMs: 10_000,

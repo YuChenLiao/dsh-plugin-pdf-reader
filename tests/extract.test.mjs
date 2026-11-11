@@ -114,3 +114,55 @@ test('render 在 inline 模式带正文，在 spilled 模式给下一步提示',
   assert.match(spilledText, /pdf_read/)
   assert.ok(!spilledText.includes('短文档正文'))
 })
+
+async function fixtureWithHybrid(markdown) {
+  const dir = await mkdtemp(join(tmpdir(), 'pdfextract2-'))
+  const file = join(dir, 'doc.pdf')
+  await writeFile(file, '%PDF-1.4 fake')
+  const calls = []
+  const registry = createEngineRegistry()
+  registry.register({
+    name: 'hybrid',
+    priority: 10,
+    version: '2.5.20',
+    explicitOnly: true,
+    async available() { return { ok: true } },
+    async convert() { calls.push('hybrid'); return { markdown, engine: 'hybrid', engineVersion: '2.5.20', degraded: false } },
+  })
+  registry.register({
+    name: 'fast',
+    priority: 20,
+    version: '2.5.20',
+    async available() { return { ok: true } },
+    async convert() { calls.push('fast'); return { markdown, engine: 'fast', engineVersion: '2.5.20', degraded: false } },
+  })
+  const config = { enabled: true, inlineLimit: 6000, cacheDir: dir, judgeEnabled: true, javaBinary: 'java' }
+  const tool = createExtractTool({ ctx: { tools: { register: () => () => {} } }, registry, config })
+  return { tool, file, calls }
+}
+
+test('默认 auto 跳过 hybrid，走 fast', async () => {
+  const { tool, file, calls } = await fixtureWithHybrid(page(1, '正文'))
+  const value = await tool.execute({ path: file }, signal())
+  assert.equal(value.engine, 'fast')
+  assert.deepEqual(calls, ['fast'])
+})
+
+test('显式 engine=hybrid 才走 hybrid', async () => {
+  const { tool, file, calls } = await fixtureWithHybrid(page(1, '正文'))
+  const value = await tool.execute({ path: file, engine: 'hybrid' }, signal())
+  assert.equal(value.engine, 'hybrid')
+  assert.deepEqual(calls, ['hybrid'])
+})
+
+test('未知引擎名报错', async () => {
+  const { tool, file } = await fixtureWithHybrid(page(1, '正文'))
+  await assert.rejects(tool.execute({ path: file, engine: 'magic' }, signal()), /magic/)
+})
+
+test('扫描件判 suspect 时，若 hybrid 可用则提示用 hybrid 救场', async () => {
+  const { tool, file } = await fixtureWithHybrid(page(1, ''))
+  const value = await tool.execute({ path: file }, signal())
+  assert.equal(value.verdict, 'suspect')
+  assert.match(value.suggest, /engine='hybrid'/)
+})

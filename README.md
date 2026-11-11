@@ -13,14 +13,15 @@
 | hybrid | `dsh-plugin-pdf-reader/hybrid` | docling 后端（Java CLI + `--hybrid docling-fast`） | **关**（开启需同意模型下载） |
 | fallback | `dsh-plugin-pdf-reader/fallback` | pdfium WASM | 开 |
 
-选择链按 priority 升序取第一个可用引擎：`hybrid(10) → fast(20) → fallback(90)`。
+选择链：`fast(20) → fallback(90)`。hybrid(10) **不进自动链** —— 实测 8–10s/页（扫描件 + OCR 约 25s/页），
+放进默认路径等于每次慢两个数量级，所以只能用 `pdf_extract(..., engine: 'hybrid')` 显式调用。
 
 ## 工具
 
 | 工具 | 状态 | 说明 |
 | --- | --- | --- |
 | `pdf_ping` | 已实现 | 环境体检：Java 版本、各引擎可用性与原因 |
-| `pdf_extract` | 已实现 | 转换 + 指标 + 三档判定；小文件返正文，大文件返判定块 |
+| `pdf_extract` | 已实现 | 转换 + 指标 + 三档判定；小文件返正文，大文件返判定块；`engine` 可选 auto/fast/fallback/hybrid |
 | `pdf_read` | 已实现 | 按句柄 + 页范围读缓存正文，不重新转换 |
 
 ## 配置
@@ -37,7 +38,7 @@
 
 hybrid 组件开启时若 `acceptModelDownload` 不为 `true`，**装载期报错**并说明需要下载模型、启动后端；同意后把它设为 `true`。
 
-hybrid 的真机前置（未在本机执行）：`pip install "opendataloader-pdf[hybrid]"` 会拉 106 个包（含 `torch 2.15.0`、`docling 2.150.0`、`transformers 5.22.2`），磁盘占用 1–2 GB；首次转换还要下模型。后端未就绪时 `available()` 报"未就绪"并触发后台启动，转换先走 fast，不会阻塞调用。
+hybrid 的真机结论（已测）：`pip install "opendataloader-pdf[hybrid]"` 会拉 106 个包（含 `torch 2.15.0`、`docling 2.150.0`、`transformers 5.22.2`），磁盘占用 1–2 GB；首次转换还要下模型。后端未就绪时 `available()` 报"未就绪"并触发后台启动，转换先走 fast，不会阻塞调用。
 
 ## 开发
 
