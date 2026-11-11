@@ -44,6 +44,12 @@ test('默认关闭时不报错，端口默认 5002', () => {
   assert.equal(backendUrlOf(cfg), 'http://127.0.0.1:5002')
 })
 
+test('backendBinary 可指向 venv 里的绝对路径', () => {
+  const cfg = resolveHybridConfig({ enabled: true, acceptModelDownload: true, backendBinary: 'D:/venv/Scripts/opendataloader-pdf-hybrid.exe' })
+  assert.equal(cfg.backendBinary, 'D:/venv/Scripts/opendataloader-pdf-hybrid.exe')
+  assert.equal(resolveHybridConfig({}).backendBinary, 'opendataloader-pdf-hybrid')
+})
+
 test('hybridUrl 优先于端口', () => {
   const cfg = resolveHybridConfig({ hybridUrl: 'http://10.0.0.5:6000' })
   assert.equal(backendUrlOf(cfg), 'http://10.0.0.5:6000')

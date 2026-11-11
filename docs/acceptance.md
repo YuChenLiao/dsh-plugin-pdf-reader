@@ -48,10 +48,32 @@ handle=5f6c72428de7
 
 直接跑 CLI 取同一文件尾部，逐字一致。说明 ≤6000 字符的正文**完整**进入了上下文，没有被 dsh 的 `tool-result-pruner` 截断（这是 `inlineLimit` 硬顶 8192 的设计目的）。
 
-## 未验证项
+## 2026-11-11 hybrid 真机验收（已补）
 
-| 项 | 原因 |
-| --- | --- |
-| hybrid 真机转换 | 需要 `pip install "opendataloader-pdf[hybrid]"`：106 个包、含 torch 2.15.0 / docling 2.150.0 / transformers 5.22.2，磁盘 1–2 GB，首次还要下模型。代码与单测已完备，等明确同意再装。 |
+环境：`pip install --user "opendataloader-pdf[hybrid]"`（2.5.21，106 个包，含 torch 2.15.0 / docling 2.150.0）；
+后端 `opendataloader-pdf-hybrid.exe --port 5002`。首次启动下载模型 52s（layout-heron + docling-models，缓存在 `~/.cache/huggingface`），
+启动后常驻内存 **1296 MB**，验证完毕已终止进程、端口已释放。
+
+| 样本 | fast | hybrid |
+| --- | --- | --- |
+| 中文说明 6 页 | **474ms**，1034 字符，2 表格，14 标题 | 49 600–58 800ms（8–10s/页），1392 字符，2 表格，11 标题 |
+| 扫描件 8 页（无文本层） | 278ms，16 字符 → 判 suspect | 108 500ms，**57 字符乱码**（`5} ,` 反复），无表格 |
+
+### 结论
+
+1. **hybrid 在本机 CPU 上慢约 100 倍**（8–10s/页 vs 0.5s/页），上游 README 的 0.463s/页 在本机不成立。
+2. **质量不是单调更好**：同一份中文说明，hybrid 多提取 358 字符，但把图片区域的数字识别成了 `| |1022|` 这种伪表格，标题层级也从 14 降到 11。
+3. **hybrid 不能救扫描件**：我的噪点扫描件经 docling-fast 后只有 57 字符乱码，说明该模式不启用 OCR 或 OCR 未生效。
+4. 因此"hybrid 优先级最高、开着就用它"这个默认是错的 —— 实测下它会让每次调用慢两个数量级，且不保证质量提升。
+
+### 顺带修掉的 bug
+
+hybrid 的 `convert()` 没有把相对路径绝对化（fast 引擎阶段 1 修过同类问题），真机第一次跑扫描件报
+`File or folder 'scan-8p.pdf' not found`。已修，并复用 fast 的绝对化逻辑。
+
+### 仍待决定
+
+hybrid 的默认定位（见对话中的建议：移出自动选择链，改为 `pdf_extract` 的显式 `engine` 参数）。
+
 | 阶段 7 接入 `web` profile | 需要改用户日常 profile 并重启 GUI，按计划需单独确认。 |
 | 真实扫描件（倾斜/阴影） | 现有扫描样本是 Pillow 生成的清洁图像页。 |

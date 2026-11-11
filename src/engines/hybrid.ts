@@ -9,7 +9,7 @@
  */
 import { connect } from 'node:net'
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
-import { dirname as pathDirname, join } from 'node:path'
+import { dirname as pathDirname, isAbsolute, join, resolve as resolvePath } from 'node:path'
 import { detectJava } from '../probe/java.ts'
 import { runProcess, type RunResult, type RunSpec } from '../proc.ts'
 import { buildConvertArgv, classifyFailure, resolveJarPath, UPSTREAM_VERSION } from '../upstream.ts'
@@ -36,6 +36,8 @@ export interface HybridConfig {
   healthTimeoutMs: number
   /** 转换用的 java 可执行文件。 */
   javaBinary: string
+  /** docling 后端可执行文件；可为绝对路径（venv 安装时用）。 */
+  backendBinary: string
 }
 
 class ConfigError extends Error {
@@ -76,6 +78,7 @@ export function resolveHybridConfig(raw: unknown): HybridConfig {
     startTimeoutMs,
     healthTimeoutMs,
     javaBinary: typeof input.javaBinary === 'string' && input.javaBinary.trim() !== '' ? input.javaBinary : 'java',
+    backendBinary: typeof input.backendBinary === 'string' && input.backendBinary.trim() !== '' ? input.backendBinary : BACKEND_BINARY,
   }
 }
 
@@ -211,7 +214,8 @@ export function createHybridEngine(ctx: Ctx, cfg: HybridConfig, deps: HybridDeps
         throw new EngineError('initializing', 'docling 后端还在初始化（首次需下载模型）。稍后重试，或先让 fast 引擎处理。')
       }
 
-      const input = request.absPath
+      // 与 fast 引擎一致：相对路径必须先绝对化，否则会被 cwd 二次拼接
+      const input = isAbsolute(request.absPath) ? request.absPath : resolvePath(request.absPath)
       const result = await run({
         argv: buildConvertArgv(cfg.javaBinary, jar, {
           input,
@@ -248,7 +252,7 @@ function spawnBackend(ctx: Ctx, cfg: HybridConfig): { stop(): void } {
     | undefined
   if (service === undefined) throw new Error('没有 ctx.subprocess，无法拉起 docling 后端')
   const handle = service.spawn({
-    argv: [BACKEND_BINARY, '--port', String(cfg.port)],
+    argv: [cfg.backendBinary, '--port', String(cfg.port)],
     cwd: process.cwd(),
     stdio: { stdin: 'ignore', stdout: 'inherit', stderr: 'inherit' },
     graceMs: 10_000,
