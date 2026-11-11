@@ -1,0 +1,51 @@
+# ============================================================================
+# dsh-plugin-pdf-reader —— DSH bundle patch
+# ============================================================================
+# 四条装载行：一条工具层 + 三个引擎组件。三个引擎各自独立 config、可单独 disabled。
+#
+# 装载顺序有意义：工具层必须先装载（它提供 ctx.pdfEngines），引擎组件往里注册。
+# 引擎组件也做了短轮询兜底，但不要依赖它。
+#
+# 安装：
+#   dsh plugin --profile memtest add D:/dsh/dsh-plugin-pdf-reader
+# 装完需重启 DSH。
+# ============================================================================
+
+- insert:
+    # 工具层：注册 pdf_ping（后续 pdf_extract / pdf_read），提供 ctx.pdfEngines。
+    - id: dsh-plugin-pdf-reader
+      name: dsh-plugin-pdf-reader
+      config:
+        # 入上下文字符上限。硬顶 8192：超过会被 dsh 的 tool-result-pruner
+        # 截成"头 4096 + 尾 1024"，中间正文静默消失。
+        inlineLimit: 6000
+        # 阶段 2 校准完成前保持 false，verdict 恒为 unknown。
+        judgeEnabled: false
+        # javaBinary: java
+        # cacheDir: ~/.dsh/pdf-cache
+
+    # 引擎：OpenDataLoader + JVM。enabled 为 true 时仍需运行时探测 Java 17+。
+    - id: dsh-plugin-pdf-reader-fast
+      name: dsh-plugin-pdf-reader/fast
+      config:
+        enabled: true
+        timeoutMs: 120000
+
+    # 引擎：docling 后端。默认关闭。开启前必须把 acceptModelDownload 设为 true，
+    # 否则装载期报错并说明需要下载模型、启动后端。
+    - id: dsh-plugin-pdf-reader-hybrid
+      name: dsh-plugin-pdf-reader/hybrid
+      disabled: true
+      config:
+        enabled: false
+        acceptModelDownload: false
+        port: 5002
+        autoStart: true
+        timeoutMs: 600000
+
+    # 引擎：pdfium WASM 兜底。无 JVM 环境时最后一道。
+    - id: dsh-plugin-pdf-reader-fallback
+      name: dsh-plugin-pdf-reader/fallback
+      config:
+        enabled: true
+        timeoutMs: 60000
