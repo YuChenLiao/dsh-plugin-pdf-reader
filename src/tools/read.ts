@@ -79,18 +79,20 @@ export function createReadTool(deps: ReadDeps): ToolDefinitionLike {
 
       const pageTexts = splitPages(entry.body)
       const total = pageTexts.length
-      const maxChars = typeof args.maxChars === 'number' && Number.isFinite(args.maxChars) && args.maxChars > 0
-        ? args.maxChars
-        : DEFAULT_MAX_CHARS
+      const requestedMax = asNumber(args.maxChars)
+      const maxChars = requestedMax !== undefined && requestedMax > 0 ? requestedMax : DEFAULT_MAX_CHARS
 
+      const page = asNumber(args.page)
+      const pageStart = asNumber(args.pageStart)
+      const pageEnd = asNumber(args.pageEnd)
       let from = 1
       let to = total
-      if (typeof args.page === 'number') {
-        from = clampPage(args.page, total)
+      if (page !== undefined) {
+        from = clampPage(page, total)
         to = from
       } else {
-        if (typeof args.pageStart === 'number') from = clampPage(args.pageStart, total)
-        if (typeof args.pageEnd === 'number') to = clampPage(args.pageEnd, total)
+        if (pageStart !== undefined) from = clampPage(pageStart, total)
+        if (pageEnd !== undefined) to = clampPage(pageEnd, total)
         if (to < from) [from, to] = [to, from]
       }
 
@@ -136,6 +138,21 @@ export function createReadTool(deps: ReadDeps): ToolDefinitionLike {
       return value
     },
   }
+}
+
+/**
+ * 模型边界上的数字可能是字符串（实测 tool 调用里 `page: 13` 会以 "13" 到达），
+ * 统一在这里做强转，避免整条逻辑静默退化成"全篇"。
+ * @param value - 原始参数。
+ * @returns 有限数字或 undefined。
+ */
+export function asNumber(value: unknown): number | undefined {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value.trim())
+    return Number.isFinite(parsed) ? parsed : undefined
+  }
+  return undefined
 }
 
 function clampPage(value: number, total: number): number {

@@ -1,5 +1,5 @@
 /** `pdf_ping`：阶段 0 的装载存在证明，之后升格为环境体检。 */
-import { ENGINE_PRIORITY, type EngineRegistry } from '../engines.ts'
+import type { EngineRegistry } from '../engines.ts'
 import { detectJava } from '../probe/java.ts'
 import type { Ctx, ToolDefinitionLike } from '../ctx.ts'
 
@@ -12,7 +12,7 @@ export interface PingDeps {
 export interface PingValue {
   pong: true
   java: { ok: boolean; binary: string; version?: number; reason?: string }
-  engines: Array<{ name: string; priority: number; version: string; ok: boolean; reason?: string }>
+  engines: Array<{ name: string; priority: number; version: string; ok: boolean; explicitOnly?: boolean; reason?: string }>
 }
 
 export function createPingTool(deps: PingDeps): ToolDefinitionLike {
@@ -39,6 +39,7 @@ export function createPingTool(deps: PingDeps): ToolDefinitionLike {
             priority: { type: 'number' },
             version: { type: 'string' },
             ok: { type: 'boolean' },
+            explicitOnly: { type: 'boolean' },
             reason: { type: 'string' },
           },
           required: ['name', 'priority', 'version', 'ok'],
@@ -59,10 +60,11 @@ export function createPingTool(deps: PingDeps): ToolDefinitionLike {
         const java = value.java.ok
           ? `java=${value.java.version ?? '?'} (${value.java.binary})`
           : `java=不可用（${value.java.reason ?? '未知原因'}）`
+        // 只列真正注册过的引擎，不列静态优先级表：否则模型会以为被禁用的引擎也在候选里
         const engines = value.engines
-          .map((engine) => `${engine.name}:${engine.ok ? 'ok' : `关闭（${engine.reason ?? '不可用'}）`}`)
+          .map((engine) => `${engine.name}${engine.explicitOnly === true ? '(按需)' : ''}:${engine.ok ? 'ok' : `关闭（${engine.reason ?? '不可用'}）`}`)
           .join(' · ')
-        return [{ type: 'text', text: `pong · ${java}\n引擎（优先级 ${Object.entries(ENGINE_PRIORITY).map(([k, v]) => `${k}=${v}`).join(' ')}）: ${engines || '(无)'}` }]
+        return [{ type: 'text', text: `pong · ${java}\n引擎: ${engines || '(无)'}` }]
       },
     },
     async execute(_args, exec) {
@@ -81,6 +83,7 @@ export function createPingTool(deps: PingDeps): ToolDefinitionLike {
           priority: engine.priority,
           version: engine.version,
           ok: engine.ok,
+          ...(engine.explicitOnly ? { explicitOnly: true } : {}),
           ...(engine.reason === undefined ? {} : { reason: engine.reason }),
         })),
       }

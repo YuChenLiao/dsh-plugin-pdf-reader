@@ -103,3 +103,48 @@ done status=ok dur=25.3s per_page=25.35s pages=1 ocr=24.1s layout=1.0s parse=0.0
 
 1. `backendBinary` 只能改可执行文件，改不了参数 —— 需要 `backendArgs` 配置才能传 `--force-ocr --ocr-lang ch_sim,en`。
 2. hybrid 不能作为默认引擎（慢 50–100 倍），应改为按需/救场。
+
+## 2026-11-11 装进 desktop profile 后的实机验收
+
+`dsh plugin --profile desktop add` 被拒（desktop 由 Electron 应用独占管理），改用宿主的 `plugin_manager`
+工具 `install_bundle("link:D:/dsh/dsh-plugin-pdf-reader")`，装完**当场生效**（工具表立刻出现三个工具，无需重启）。
+
+### 通过
+
+```
+pdf_ping   → pong · java=17 (java)
+             引擎: fast:ok · fallback:ok
+pdf_extract(Downloads/补丁安装说明.pdf)
+           → pdf ok · 6页 · 1034字符 · 2表格 · 14标题 · engine=fast
+             正文全文进上下文（inline 路径正常工作）
+pdf_extract(fixtures/samples/arxiv-2201.11903v6.pdf)
+           → pdf ok · 43页 · 136800字符 · ~82080 tokens · 17表格 · 46标题 · engine=fast
+             handle=b27982854e2a，正文 0 字符进上下文
+```
+
+### 抓到一个真实的互操作 bug
+
+`pdf_read(handle=…, page=13, maxChars=600)` 返回了**第 1 页**。本地复现：
+
+```
+{ page: 13 }            → 第 13 页 ✓
+{ page: "13" }          → 第 1 页 ✗（退化成"全篇 + 截断"）
+```
+
+即模型发出的 `13` 到达工具时是**字符串**，而实现只接受 `number`。按 dsh 的约定，模型边界上的值必须校验，
+不能假定类型 —— 已加 `asNumber()` 强转，覆盖 `page` / `pageStart` / `pageEnd` / `maxChars` / `inlineLimit`。
+
+修复后在新 sandbox 实例（新进程）验证：
+
+```
+pdf_read(page=13, maxChars=500) → b27982854e2a · 第 13 页（共 43 页，500 字符）
+```
+
+### 顺带修正 pdf_ping 的 render
+
+原来 render 会把静态优先级表 `hybrid=10 fast=20 fallback=90` 一起打出来，即使 hybrid 组件被禁用也照打，
+容易让模型以为它可用。改为只列真正注册的引擎，并把按需引擎标成 `(按需)`。
+
+### 遗留
+
+宿主进程里跑的还是修复前的 `lib/`，需要重启一次才能吃到 `asNumber` 与 render 修正。

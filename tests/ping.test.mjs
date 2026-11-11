@@ -68,4 +68,5 @@ test('pdf_ping 返回 pong 与各引擎状态（java 不可用时如实报错）
   assert.equal(blocks[0].type, 'text')
   assert.match(blocks[0].text, /pong/)
   assert.match(blocks[0].text, /fast:关闭/)
+  assert.ok(!blocks[0].text.includes('hybrid='), '静态优先级表不应出现在 render 里')
 })

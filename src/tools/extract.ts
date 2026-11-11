@@ -5,6 +5,7 @@ import { cacheKey, expandHome, lookupFile, paramsSignature, sha256File, writeEnt
 import { computeMetrics, estimateTokens, type Metrics } from '../metrics.ts'
 import { judge } from '../verdict.ts'
 import { PAGE_SEPARATOR } from '../upstream.ts'
+import { asNumber } from './read.ts'
 import type { EngineError, EngineRegistry } from '../engines.ts'
 import type { PluginConfig } from '../plugin.ts'
 import type { Ctx, ToolDefinitionLike } from '../ctx.ts'
@@ -140,8 +141,9 @@ export function createExtractTool(deps: ExtractDeps): ToolDefinitionLike {
         ...PARAMS_BASE,
         ...(typeof args.pages === 'string' && args.pages.trim() !== '' ? { pages: args.pages.trim() } : {}),
       }
-      const inlineLimit = typeof args.inlineLimit === 'number' && Number.isFinite(args.inlineLimit) && args.inlineLimit >= 0
-        ? args.inlineLimit
+      const requestedInline = asNumber(args.inlineLimit)
+      const inlineLimit = requestedInline !== undefined && requestedInline >= 0
+        ? requestedInline
         : deps.config.inlineLimit
       const cacheDir = expandHome(deps.config.cacheDir)
 
