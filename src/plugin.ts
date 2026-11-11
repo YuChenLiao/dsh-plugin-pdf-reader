@@ -5,6 +5,7 @@
 import { createEngineRegistry, type EngineRegistry } from './engines.ts'
 import { createPingTool } from './tools/ping.ts'
 import { createExtractTool } from './tools/extract.ts'
+import { createReadTool } from './tools/read.ts'
 import type { Ctx } from './ctx.ts'
 
 // 便于测试与外部复用；函数插件不能有 default export，这些具名导出不冲突。
@@ -13,6 +14,8 @@ export type { EngineName, EngineRegistry, PdfEngine, ConvertRequest, ConvertResu
 export { createPingTool } from './tools/ping.ts'
 export type { PingValue } from './tools/ping.ts'
 export { createExtractTool } from './tools/extract.ts'
+export { createReadTool } from './tools/read.ts'
+export type { ReadValue } from './tools/read.ts'
 export type { ExtractValue } from './tools/extract.ts'
 export { parseJavaVersion, detectJava } from './probe/java.ts'
 export { runProcess } from './proc.ts'
@@ -111,6 +114,7 @@ export function apply(ctx: Ctx, config: unknown): void {
 
   ctx.tools.register(createPingTool({ ctx, registry, javaBinary: cfg.javaBinary }))
   ctx.tools.register(createExtractTool({ ctx, registry, config: cfg }))
+  ctx.tools.register(createReadTool({ config: cfg }))
 
   const logger = typeof ctx.logger === 'function'
     ? (ctx.logger as (scope: string) => { info(...a: unknown[]): void } | undefined)('pdf-reader')
