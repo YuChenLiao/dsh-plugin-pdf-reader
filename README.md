@@ -22,21 +22,25 @@
 
 ## 安装
 
-装进任意 profile（把 `<仓库路径>` 换成本地克隆目录；Windows 上写成正斜杠或双反斜杠）：
+直接装仓库地址即可，`lib/` 构建产物已随仓库提供，装完不需要再构建：
+
+```sh
+dsh plugin --profile <profile> add github:YuChenLiao/dsh-plugin-pdf-reader
+dsh --profile <profile> --dump-config | grep pdf-reader   # 确认四条装载行
+```
+
+`<profile>` 用你实际运行的那个：桌面应用默认是 `desktop`，也可以先用独立 profile（如 `memtest`）试。
+
+装完**重启 DSH**。
+
+本地开发时改用目录链接，改完源码记得 `npm run build`：
 
 ```sh
 git clone https://github.com/YuChenLiao/dsh-plugin-pdf-reader.git
 cd dsh-plugin-pdf-reader && npm install && npm run build
 
-dsh plugin --profile <profile> add <仓库路径>
-dsh --profile <profile> --dump-config | grep pdf-reader   # 确认四条装载行
+dsh plugin --profile <profile> add link:<本地克隆路径>
 ```
-
-`<profile>` 用你实际运行的那个：桌面应用默认是 `desktop`，也可以用独立的测试 profile（如 `memtest`）先验。
-
-装完**重启 DSH**。`lib/` 由 `npm run build` 产出，profile 以 `link:` 引用本目录，`main` 指向 `lib/index.js`，所以构建产物必须在。
-
-> 如果 `add` 报权限类错误（例如提示 profile 被应用独占管理），先确认命令是在正常的用户 shell 里执行、且对该 profile 目录可写；这类报错来自执行环境的权限限制，不代表桌面版不能用标准命令安装。
 
 ## 工具
 
