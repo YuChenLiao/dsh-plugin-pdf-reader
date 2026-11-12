@@ -175,3 +175,18 @@ pdf_extract(scan-8p.pdf) → pdf suspect · 8页 · 16字符
 扫描件 16 个字符全是 `<!-- PAGE n -->` 标记，进上下文纯属浪费。现在 `nonspace_chars === 0` 时不返回 content。
 
 测试 103/103。
+
+## 2026-11-12 代码审查后的修复（第一批：C1–C3 + I5 + I9）
+
+独立评审（`deepseek-flash` / max）在 4 轮审查 + 2 个运行时复现后给出 3 Critical / 9 Important / 18 Minor。
+第一批修完 C1–C3 与两项守卫：
+
+| 编号 | 问题 | 修法 | 证据 |
+| --- | --- | --- | --- |
+| C1 | `pdf_read` 按数组下标重建页号，`--pages 5-8` 的结果读第 1 页会被标成 `PAGE 1` | `splitPagesWithNumbers` 从标记里读原始页码；meta 增 `pageNumbers`；越界改为报错而非静默夹取 | `pages='5-8'` → `pdf_read(page=5)` 返回 `PAGE 5`；`page=1` 报"可用 5–8" |
+| C2 | 缓存命中在读 `engine` 参数之前，`engine='hybrid'` 会命中 fast 的旧条目 | `lookupFile` 增加引擎过滤；显式引擎先解析再查缓存 | 单测：fast 缓存存在时 `engine='hybrid'` 确实调用 hybrid |
+| C3 | inline 判定用剥离页标记后的字符数，交付却含标记 | `spillOrInline` 改用 `bodyChars`；单次 `inlineLimit` 也加硬顶校验 | 150 页稀疏文档（剥离 5700 字符）判 spilled |
+| I5 | `handle` 未校验即拼路径，可 `../..` 穿越 | 限定 12 位十六进制 | 单测：`../../etc/passwd` 与大小写变体均被拒 |
+| I9 | 测试 import `lib/`，`npm test` 不构建，src 改动仍全绿 | `pretest: npm run build` | 现在测试跑的是刚构建的产物 |
+
+测试从 104 增至 109。

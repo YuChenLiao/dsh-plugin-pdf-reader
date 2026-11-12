@@ -2,7 +2,7 @@
 import { stat } from 'node:fs/promises'
 import { isAbsolute, resolve as resolvePath } from 'node:path'
 import { cacheKey, expandHome, lookupFile, paramsSignature, sha256File, writeEntry, type CacheMeta, type CacheParams } from '../cache.ts'
-import { computeMetrics, estimateTokens, type Metrics } from '../metrics.ts'
+import { computeMetrics, estimateTokens, splitPagesWithNumbers, type Metrics } from '../metrics.ts'
 import { judge } from '../verdict.ts'
 import { PAGE_SEPARATOR } from '../upstream.ts'
 import { asNumber } from './read.ts'
@@ -33,6 +33,12 @@ export interface ExtractValue {
 
 const PARAMS_BASE: Omit<CacheParams, 'pages'> = { separator: PAGE_SEPARATOR }
 
+/**
+ * 入上下文字符硬顶。dsh 的 `tool-result-pruner` 在 8192 字符处把结果截成
+ * "头 4096 + 尾 1024"，超过它正文会被静默丢弃，所以这里直接拒绝。
+ */
+export const INLINE_HARD_CEILING = 8192
+
 const schema = {
   type: 'object',
   properties: {
@@ -58,13 +64,17 @@ export function resolveInputPath(input: string): string {
   return isAbsolute(input) ? input : resolvePath(process.cwd(), input)
 }
 
-function spillOrInline(chars: number, inlineLimit: number): 'inline' | 'spilled' {
+/**
+ * inline 判定必须用**交付尺寸**（含页标记的 body 长度），而不是剥离标记后的字符数：
+ * 150 页的稀疏文档剥离后只有 5999 字符，实际交付却超过 8192，会被 pruner 砍掉中段。
+ */
+function spillOrInline(bodyChars: number, inlineLimit: number): 'inline' | 'spilled' {
   if (inlineLimit === 0) return 'spilled'
-  return chars <= inlineLimit ? 'inline' : 'spilled'
+  return bodyChars <= inlineLimit ? 'inline' : 'spilled'
 }
 
-function toValue(meta: Pick<CacheMeta, 'handle' | 'engine' | 'degraded' | 'verdict' | 'pages' | 'chars' | 'stats' | 'issues' | 'score' | 'sourcePath'>, body: string, inlineLimit: number, hybridUsable = false): ExtractValue {
-  const mode = spillOrInline(meta.chars, inlineLimit)
+function toValue(meta: Pick<CacheMeta, 'handle' | 'engine' | 'degraded' | 'verdict' | 'pages' | 'chars' | 'bodyChars' | 'stats' | 'issues' | 'score' | 'sourcePath'>, body: string, inlineLimit: number, hybridUsable = false): ExtractValue {
+  const mode = spillOrInline(meta.bodyChars ?? meta.chars, inlineLimit)
   const value: ExtractValue = {
     mode,
     engine: meta.engine,
@@ -144,10 +154,16 @@ export function createExtractTool(deps: ExtractDeps): ToolDefinitionLike {
         ...(typeof args.pages === 'string' && args.pages.trim() !== '' ? { pages: args.pages.trim() } : {}),
       }
       const requestedInline = asNumber(args.inlineLimit)
+      if (requestedInline !== undefined && requestedInline > INLINE_HARD_CEILING) {
+        throw new Error(`inlineLimit 上限是 ${INLINE_HARD_CEILING} 字符：超过它会被 dsh 的 tool-result-pruner 截成"头+尾"并丢正文`)
+      }
       const inlineLimit = requestedInline !== undefined && requestedInline >= 0
         ? requestedInline
         : deps.config.inlineLimit
       const cacheDir = expandHome(deps.config.cacheDir)
+
+      const requested = typeof args.engine === 'string' ? args.engine.trim() : 'auto'
+      const explicitEngine = requested === '' || requested === 'auto' ? undefined : requested as 'fast' | 'fallback' | 'hybrid'
 
       const hybridUsable = async (): Promise<boolean> => {
         const probes = await deps.registry.probe(exec.signal)
@@ -156,17 +172,19 @@ export function createExtractTool(deps: ExtractDeps): ToolDefinitionLike {
 
       const fileSha256 = await sha256File(absPath)
       if (args.force !== true) {
-        const hit = await lookupFile(cacheDir, fileSha256, params)
+        // 显式指定引擎时只认该引擎的缓存条目：否则 engine='hybrid' 会命中 fast 的旧结果，
+        // 而 suggest 恰恰让模型这么调（code review C2）
+        const hit = await lookupFile(cacheDir, fileSha256, params, explicitEngine)
         if (hit !== null) return toValue(hit.meta, hit.body, inlineLimit, hit.meta.verdict === 'suspect' ? await hybridUsable() : false)
       }
 
-      const requested = typeof args.engine === 'string' ? args.engine.trim() : 'auto'
-      const engine = requested === '' || requested === 'auto'
+      const engine = explicitEngine === undefined
         ? await deps.registry.select(exec.signal)
-        : await deps.registry.selectNamed(requested as 'fast' | 'fallback' | 'hybrid', exec.signal)
+        : await deps.registry.selectNamed(explicitEngine, exec.signal)
       const converted = await engine.convert({ absPath, ...(params.pages === undefined ? {} : { pages: params.pages }), signal: exec.signal })
       const metrics: Metrics = computeMetrics(converted.markdown)
       const judgment = judge(metrics, converted.engine, deps.config.judgeEnabled)
+      const pageNumbers = splitPagesWithNumbers(converted.markdown).map((slice) => slice.page)
 
       const handle = cacheKey(fileSha256, converted.engine, converted.engineVersion, params)
       const meta: CacheMeta = {
@@ -177,6 +195,8 @@ export function createExtractTool(deps: ExtractDeps): ToolDefinitionLike {
         params,
         pages: metrics.pages,
         chars: metrics.chars,
+        pageNumbers,
+        bodyChars: converted.markdown.length,
         cachedAt: new Date().toISOString(),
         fileSha256,
         sourcePath: absPath,

@@ -4,7 +4,7 @@
  */
 import { createEngineRegistry, type EngineRegistry } from './engines.ts'
 import { createPingTool } from './tools/ping.ts'
-import { createExtractTool } from './tools/extract.ts'
+import { createExtractTool, INLINE_HARD_CEILING } from './tools/extract.ts'
 import { createReadTool } from './tools/read.ts'
 import type { Ctx } from './ctx.ts'
 
@@ -55,7 +55,6 @@ export const CONFIG_DEFAULTS: PluginConfig = {
   javaBinary: 'java',
 }
 
-const INLINE_HARD_CEILING = 8192
 
 class ConfigError extends Error {
   constructor(message: string) {

@@ -83,12 +83,30 @@ test('inlineLimit: 0 时总是落盘', async () => {
   assert.equal(value.content, undefined)
 })
 
-test('inlineLimit 边界：等于上限走 inline，超一个字符走 spilled', async () => {
+test('inlineLimit 判定用交付尺寸（含页标记），不是剥离标记后的字符数', async () => {
   const { tool, file } = await fixture(page(1, 'x'.repeat(99)))
-  const atLimit = await tool.execute({ path: file, inlineLimit: 100 }, signal())
+  // 交付正文 = 标记 + 正文，比剥离标记后的 99 字符长
+  const delivered = `<!-- PAGE 1 -->
+${'x'.repeat(99)}`.length
+  const atLimit = await tool.execute({ path: file, inlineLimit: delivered }, signal())
   assert.equal(atLimit.mode, 'inline')
-  const over = await tool.execute({ path: file, inlineLimit: 98, force: true }, signal())
+  const over = await tool.execute({ path: file, inlineLimit: delivered - 1, force: true }, signal())
   assert.equal(over.mode, 'spilled')
+})
+
+test('页标记让稀疏大文档超限：剥离后字数很少也必须走 spilled', async () => {
+  // 150 页 × 38 字符 = 5700 字符（旧规则会判 inline），交付尺寸却超过 8192
+  const markdown = Array.from({ length: 150 }, (_, index) => page(index + 1, 'x'.repeat(38))).join('\n')
+  const { tool, file } = await fixture(markdown)
+  const value = await tool.execute({ path: file }, signal())
+  assert.equal(value.mode, 'spilled', '交付尺寸超上限时必须落盘')
+  assert.equal(value.content, undefined)
+  assert.ok(value.chars < 6000, '剥离标记后确实低于 inlineLimit，说明判定看的是交付尺寸')
+})
+
+test('单次调用的 inlineLimit 超过硬顶直接报错', async () => {
+  const { tool, file } = await fixture(page(1, 'x'))
+  await assert.rejects(tool.execute({ path: file, inlineLimit: 9000 }, signal()), /tool-result-pruner/)
 })
 
 test('pages 参与 handle：同文件不同页范围是两个 handle', async () => {
@@ -180,4 +198,19 @@ test('零文本扫描件的 render 不再提示去读 pdf_read', async () => {
   const text = tool.output.render({}, value)[0].text
   assert.ok(!text.includes('用 pdf_read 按页读取'))
   assert.match(text, /没有提取到文本/)
+})
+
+test('已有 fast 缓存时，显式 engine=hybrid 真的会走 hybrid（不再命中 fast 缓存）', async () => {
+  const { tool, file, calls } = await fixtureWithHybrid(page(1, '同样正文'))
+  const first = await tool.execute({ path: file }, signal())
+  assert.equal(first.engine, 'fast')
+  const second = await tool.execute({ path: file, engine: 'hybrid' }, signal())
+  assert.equal(second.engine, 'hybrid', '显式指定引擎时不能复用别的引擎的缓存')
+  assert.deepEqual(calls, ['fast', 'hybrid'])
+
+  // auto 再次调用：按设计 §15.3，缓存命中取同参数下最新的一份（此处是 hybrid），
+  // 不再重跑引擎 —— 关键是 calls 不再增长
+  const third = await tool.execute({ path: file }, signal())
+  assert.equal(third.engine, 'hybrid')
+  assert.deepEqual(calls, ['fast', 'hybrid'], 'auto 命中缓存时不应再调用任何引擎')
 })

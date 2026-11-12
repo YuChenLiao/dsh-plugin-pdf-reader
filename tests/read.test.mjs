@@ -63,9 +63,10 @@ test('超 maxChars 截断并告诉模型怎么续读', async () => {
   const value = await tool.execute({ handle, maxChars: 4000 }, signal())
   assert.equal(value.truncated, true)
   assert.ok(value.content.length <= 4000)
+  assert.ok(value.next_offset !== undefined)
   const text = tool.output.render({}, value)[0].text
   assert.match(text, /已截断/)
-  assert.match(text, /offset=|剩余第/)
+  assert.match(text, /offset=/)
 })
 
 test('单页比 maxChars 长时给 next_offset，续读能拿到下一段', async () => {
@@ -85,12 +86,41 @@ test('handle 不存在时报错并给出最近可用的 handle', async () => {
   await assert.rejects(tool.execute({ handle: 'ffffffffffff' }, signal()), new RegExp(handle))
 })
 
-test('页号越界时夹到合法范围', async () => {
+test('页号越界时报错，不静默夹取', async () => {
   const { tool, handle } = await seed(['A', 'B'])
-  const high = await tool.execute({ handle, page: 99 }, signal())
-  assert.equal(high.from_page, 2)
-  const low = await tool.execute({ handle, page: 0 }, signal())
-  assert.equal(low.from_page, 1)
+  await assert.rejects(tool.execute({ handle, page: 99 }, signal()), /不在已提取的页范围内/)
+  await assert.rejects(tool.execute({ handle, page: 0 }, signal()), /不在已提取的页范围内/)
+})
+
+test('页码按分隔符里的原始页号映射，不按数组下标', async () => {
+  const cacheDir = await mkdtemp(join(tmpdir(), 'pdfread-'))
+  // 模拟 --pages 5-8 的提取结果：正文里只有第 5–8 页
+  const body = [[5, 'FIVE'], [6, 'SIX'], [7, 'SEVEN'], [8, 'EIGHT']]
+    .map(([n, t]) => `<!-- PAGE ${n} -->\n${t}`)
+    .join('\n')
+  const handle = cacheKey('b'.repeat(64), 'fast', '2.5.20', params)
+  await writeEntry(cacheDir, {
+    handle,
+    body,
+    meta: {
+      handle, engine: 'fast', engineVersion: '2.5.20', degraded: false, params,
+      pages: 4, chars: body.length, bodyChars: body.length, pageNumbers: [5, 6, 7, 8],
+      cachedAt: '2026-11-12T00:00:00.000Z', fileSha256: 'b'.repeat(64),
+      sourcePath: 'D:/x.pdf', sourceSize: 1, sourceMtimeMs: 1, stats: { chars: body.length }, verdict: 'ok',
+    },
+  })
+  const tool = createReadTool({ config: { cacheDir } })
+  const five = await tool.execute({ handle, page: 5 }, signal())
+  assert.match(five.content, /FIVE/)
+  assert.ok(five.content.includes('<!-- PAGE 5 -->'), '标记应保留原始页码')
+  assert.equal(five.from_page, 5)
+  await assert.rejects(tool.execute({ handle, page: 1 }, signal()), /第 1 页不在已提取的页范围内|不在已提取的页范围内/)
+})
+
+test('handle 不是 12 位十六进制时拒绝（防目录穿越）', async () => {
+  const { tool } = await seed(['A'])
+  await assert.rejects(tool.execute({ handle: '../../etc/passwd' }, signal()), /格式不对/)
+  await assert.rejects(tool.execute({ handle: 'ABCDEF123456' }, signal()), /格式不对/)
 })
 
 test('区间反向时自动纠正', async () => {

@@ -34,6 +34,10 @@ export interface CacheMeta extends CacheEntryRef {
   sourcePath: string
   sourceSize: number
   sourceMtimeMs: number
+  /** 正文里实际出现的原始页码（有序）。pdf_read 靠它把页码映射到正文位置。 */
+  pageNumbers: number[]
+  /** 正文交付尺寸：含页标记的 body.md 字符数。inline 判定必须用它，不能用剥离标记后的 chars。 */
+  bodyChars: number
   stats: Record<string, number>
   issues?: string[]
   score?: number
@@ -153,11 +157,17 @@ export async function writeEntry(cacheDir: string, entry: { handle: string; body
  * @param params - 转换参数。
  * @returns 命中的条目；无命中返回 null。
  */
-export async function lookupFile(cacheDir: string, fileSha256: string, params: CacheParams): Promise<CacheEntry | null> {
+export async function lookupFile(
+  cacheDir: string,
+  fileSha256: string,
+  params: CacheParams,
+  engine?: string,
+): Promise<CacheEntry | null> {
   const index = await readJson<FileIndex>(fileIndexPath(cacheDir, fileSha256))
   if (index === null) return null
   const signature = paramsSignature(params)
-  const matches = index.entries.filter((entry) => paramsSignature(entry.params) === signature)
+  const matches = index.entries.filter((entry) => paramsSignature(entry.params) === signature
+    && (engine === undefined || entry.engine === engine))
   if (matches.length === 0) return null
   matches.sort((a, b) => (a.cachedAt < b.cachedAt ? 1 : a.cachedAt > b.cachedAt ? -1 : 0))
   return readEntry(cacheDir, (matches[0] as CacheEntryRef).handle)
