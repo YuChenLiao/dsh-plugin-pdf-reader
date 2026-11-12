@@ -109,7 +109,9 @@ const STDERR_TAIL = 2048
  * @returns 失败类别与可读信息。
  */
 export function classifyFailure(result: Pick<RunResult, 'code' | 'stdout' | 'stderr'>): FailureClass {
-  const text = `${result.stderr}\n${result.stdout}`
+  // 只看 stderr：stdout 是正文本身，里面出现 "password"/"encrypted" 是正常内容，
+  // 扫它会把这个词误判成加密 PDF（code review Minor）
+  const text = result.stderr
   const tail = result.stderr.trim().slice(-STDERR_TAIL)
   if (/File or folder .* not found|No such file/i.test(text)) return { kind: 'missing-file', message: `路径不存在：${tail}` }
   if (/is not a PDF file/i.test(text)) return { kind: 'not-pdf', message: `不是 PDF 文件：${tail}` }

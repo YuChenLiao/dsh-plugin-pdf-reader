@@ -33,6 +33,8 @@ export function resolveFallbackConfig(raw: unknown): FallbackConfig {
 /** pdfium 的最小接触面，便于测试注入。 */
 export interface PdfiumPageLike {
   getText(): Promise<string>
+  /** 释放单页资源；不调只影响内存峰值。 */
+  close?(): void
 }
 export interface PdfiumDocumentLike {
   getPageCount(): number
@@ -113,8 +115,14 @@ export function createFallbackEngine(cfg: FallbackConfig, deps: FallbackDeps = {
           if (request.signal.aborted) throw new EngineError('aborted', '转换被取消')
           if (deadline.aborted) throw new EngineError('timeout', `fallback 引擎转换超时（${cfg.timeoutMs}ms）`)
           if (wanted !== null && !wanted.has(page)) continue
-          const text = await document.getPage(page - 1).getText()
-          blocks.push(`${pageMarker(page)}\n${text.trim()}`)
+          const pageHandle = document.getPage(page - 1)
+          try {
+            const text = await pageHandle.getText()
+            blocks.push(`${pageMarker(page)}\n${text.trim()}`)
+          } finally {
+            // 逐页释放：不调只是内存峰值高，destroy() 仍在 finally 里兜底
+            pageHandle.close?.()
+          }
         }
         if (blocks.length === 0) throw new EngineError('engine-error', `页范围 "${request.pages ?? ''}" 没有命中任何页`)
         return { markdown: blocks.join('\n'), engine: 'fallback', engineVersion: version, degraded: true }

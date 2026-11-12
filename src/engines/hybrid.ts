@@ -14,7 +14,7 @@ import { detectJava } from '../probe/java.ts'
 import { runProcess, type RunResult, type RunSpec } from '../proc.ts'
 import { buildConvertArgv, classifyFailure, resolveJarPath, UPSTREAM_VERSION } from '../upstream.ts'
 import { ENGINE_PRIORITY, EngineError, type Availability, type ConvertRequest, type ConvertResult, type PdfEngine } from '../engines.ts'
-import { expandHome } from '../cache.ts'
+import { expandHome } from '../args.ts'
 import { attachEngine } from './attach.ts'
 import type { Ctx } from '../ctx.ts'
 
@@ -36,6 +36,8 @@ export interface HybridConfig {
   healthTimeoutMs: number
   /** 转换用的 java 可执行文件。 */
   javaBinary: string
+  /** 状态文件所在目录（与工具层 cacheDir 保持一致即可）。 */
+  cacheDir: string
   /** docling 后端可执行文件；可为绝对路径（venv 安装时用）。 */
   backendBinary: string
   /** 额外传给后端的参数，如 ['--force-ocr', '--ocr-lang', 'ch_sim,en']。 */
@@ -80,6 +82,7 @@ export function resolveHybridConfig(raw: unknown): HybridConfig {
     startTimeoutMs,
     healthTimeoutMs,
     javaBinary: typeof input.javaBinary === 'string' && input.javaBinary.trim() !== '' ? input.javaBinary : 'java',
+    cacheDir: typeof input.cacheDir === 'string' && input.cacheDir.trim() !== '' ? input.cacheDir : '~/.dsh/pdf-cache',
     backendBinary: typeof input.backendBinary === 'string' && input.backendBinary.trim() !== '' ? input.backendBinary : BACKEND_BINARY,
     backendArgs: Array.isArray(input.backendArgs)
       ? input.backendArgs.filter((item): item is string => typeof item === 'string' && item.trim() !== '')
@@ -140,7 +143,7 @@ export function createHybridEngine(ctx: Ctx, cfg: HybridConfig, deps: HybridDeps
   const run = deps.run ?? ((spec: RunSpec) => runProcess(ctx, spec))
   const probe = deps.probe ?? probePort
   const sleep = deps.sleep ?? defaultSleep
-  const stateFile = deps.stateFile ?? join(expandHome('~/.dsh/pdf-cache'), '.hybrid-state.json')
+  const stateFile = deps.stateFile ?? join(expandHome(cfg.cacheDir), '.hybrid-state.json')
   const startBackend = deps.startBackend ?? ((config: HybridConfig) => spawnBackend(ctx, config))
 
   let backend: { stop(): void } | null = null
@@ -189,7 +192,11 @@ export function createHybridEngine(ctx: Ctx, cfg: HybridConfig, deps: HybridDeps
       }
       await writeState({ status: 'failed', port, startedAt: new Date().toISOString(), detail: `后端在 ${cfg.startTimeoutMs}ms 内未就绪` })
       return false
-    })()
+    })().then((ok) => {
+      // 失败不缓存：否则一次网络抖动会让本进程再也不重试启动
+      if (!ok) starting = null
+      return ok
+    })
     return starting
   }
 
@@ -201,7 +208,7 @@ export function createHybridEngine(ctx: Ctx, cfg: HybridConfig, deps: HybridDeps
     version: UPSTREAM_VERSION,
     // 换了后端参数（例如开 --force-ocr）就该是另一份缓存（code review I2）
     cacheSignature: JSON.stringify({ url: backendUrlOf(cfg), args: cfg.backendArgs }),
-    async available(signal): Promise<Availability> {
+    async available(signal, allowStart = true): Promise<Availability> {
       if (!cfg.enabled) return { ok: false, reason: '组件已关闭（默认关闭）' }
       if (!cfg.acceptModelDownload) return { ok: false, reason: '未同意模型下载' }
       if (jarOf() === null) return { ok: false, reason: `未安装 @opendataloader/pdf@${UPSTREAM_VERSION}` }
@@ -210,8 +217,12 @@ export function createHybridEngine(ctx: Ctx, cfg: HybridConfig, deps: HybridDeps
 
       const { host, port } = target()
       if (await probe(host, port, cfg.healthTimeoutMs)) return { ok: true }
+      if (!allowStart) {
+        // 只想判断「能不能用」时不启动服务：为了一句建议去拉起 1.3GB 后端不值得
+        return { ok: false, reason: 'docling 后端未启动' }
+      }
       // 后端没起来：触发一次后台启动，本次仍判不可用，让调用先走 fast
-      void ensureBackend()
+      void ensureBackend().catch(() => false)
       return { ok: false, reason: 'docling 后端未就绪（已在后台启动，首次需下载模型；状态见 ~/.dsh/pdf-cache/.hybrid-state.json）' }
     },
     async convert(request: ConvertRequest): Promise<ConvertResult> {

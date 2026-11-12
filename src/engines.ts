@@ -68,7 +68,12 @@ export interface PdfEngine {
    * hybrid 用它：真机实测 8–10s/页（扫描件 + OCR 约 25s/页），放进默认链等于每次慢两个数量级。
    */
   readonly explicitOnly?: boolean
-  available(signal?: AbortSignal): Promise<Availability>
+  /**
+   * 探测可用性。
+   * @param signal - 取消信号。
+   * @param allowStart - 是否允许为此拉起外部服务（默认允许）；只想知道「能不能用」时传 false。
+   */
+  available(signal?: AbortSignal, allowStart?: boolean): Promise<Availability>
   convert(request: ConvertRequest): Promise<ConvertResult>
 }
 
@@ -89,8 +94,12 @@ export interface EngineRegistry {
   select(signal?: AbortSignal): Promise<PdfEngine>
   /** 按名字取引擎；不存在或不可用时抛 EngineError。 */
   selectNamed(name: EngineName, signal?: AbortSignal): Promise<PdfEngine>
-  /** 每个注册引擎的可用性汇总，供 pdf_ping 展示。 */
-  probe(signal?: AbortSignal): Promise<EngineProbe[]>
+  /**
+   * 每个注册引擎的可用性汇总，供 pdf_ping 展示与「值不值得建议」判断。
+   * @param signal - 取消信号。
+   * @param allowStart - 是否允许探测期间拉起外部服务；默认 false，展示用途不该有副作用。
+   */
+  probe(signal?: AbortSignal, allowStart?: boolean): Promise<EngineProbe[]>
 }
 
 /**
@@ -107,7 +116,10 @@ export function createEngineRegistry(availabilityRetryMs = 60_000): EngineRegist
   const cache = new Map<EngineName, { value: Availability; at: number }>()
   const inflight = new Map<EngineName, Promise<Availability>>()
 
-  const check = (engine: PdfEngine, signal?: AbortSignal): Promise<Availability> => {
+  const check = (engine: PdfEngine, signal?: AbortSignal, allowStart = true): Promise<Availability> => {
+    // 只读探测（allowStart=false）不进缓存：它可能因为「没启动」返回不可用，
+    // 缓存下来会让后续真正的调用继续误判
+    if (!allowStart) return engine.available(signal, false)
     const cached = cache.get(engine.name)
     if (cached !== undefined && (cached.value.ok || Date.now() - cached.at < availabilityRetryMs)) {
       return Promise.resolve(cached.value)
@@ -169,10 +181,10 @@ export function createEngineRegistry(availabilityRetryMs = 60_000): EngineRegist
       if (!availability.ok) throw new EngineError('unavailable', `引擎 "${name}" 不可用：${availability.reason ?? '未知原因'}`)
       return engine
     },
-    async probe(signal) {
+    async probe(signal, allowStart = false) {
       const out: EngineProbe[] = []
       for (const engine of sorted()) {
-        const availability = await check(engine, signal)
+        const availability = await check(engine, signal, allowStart)
         out.push({
           name: engine.name,
           priority: engine.priority,

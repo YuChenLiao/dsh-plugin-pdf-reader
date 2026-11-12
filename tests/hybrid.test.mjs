@@ -152,3 +152,34 @@ test('hybrid 标记为 explicitOnly，不进自动链', async () => {
   const { engine } = engineWith()
   assert.equal(engine.explicitOnly, true)
 })
+
+test('probe(false) 不启动后端：为一句建议拉起 1.3GB 服务不值得', async () => {
+  const stateFile = await statePath()
+  const { engine, seen } = engineWith({ probe: async () => false, stateFile })
+  const availability = await engine.available(undefined, false)
+  assert.equal(availability.ok, false)
+  assert.match(availability.reason, /未启动/)
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  assert.equal(seen.starts, 0, '只读探测不应触发启动')
+})
+
+test('启动失败后可重试，不会被永久缓存', async () => {
+  const stateFile = await statePath()
+  let starts = 0
+  const engine = createHybridEngine(
+    ctx,
+    resolveHybridConfig({ enabled: true, acceptModelDownload: true, port: 5002, backendBinary: 'x', startTimeoutMs: 5, healthTimeoutMs: 5 }),
+    {
+      jarOf: () => JAR,
+      probe: async () => false,
+      startBackend: () => { starts += 1; return { stop: () => {} } },
+      sleep: async () => {},
+      stateFile,
+    },
+  )
+  await engine.available(undefined, true)
+  await new Promise((resolve) => setTimeout(resolve, 60))
+  await engine.available(undefined, true)
+  await new Promise((resolve) => setTimeout(resolve, 60))
+  assert.equal(starts, 2, '第一次失败后第二次应重试启动')
+})

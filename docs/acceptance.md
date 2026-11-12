@@ -190,3 +190,16 @@ pdf_extract(scan-8p.pdf) → pdf suspect · 8页 · 16字符
 | I9 | 测试 import `lib/`，`npm test` 不构建，src 改动仍全绿 | `pretest: npm run build` | 现在测试跑的是刚构建的产物 |
 
 测试从 104 增至 109。
+
+## 2026-11-12 审查遗留项收尾（第二批 Minor）
+
+| 项 | 问题 | 修法 |
+| --- | --- | --- |
+| 为一句建议拉起后端 | `suggest` 判断 hybrid 可用时调 `available()`，后者会 `void ensureBackend()` —— 只因扫描件被判 suspect 就可能拉起 1.3GB 的 docling | 引擎 `available(signal, allowStart)`；`probe()` 默认 `allowStart=false`；只读探测不进可用性缓存 |
+| 启动失败永久缓存 | `starting ??=` 把失败结果留到进程结束 | 失败时 `starting = null`，下次调用重试 |
+| 分类扫了 stdout | `classifyFailure` 在正文里找 `password`／`encrypted`，正常内容也会命中 | 只看 stderr |
+| 页对象不释放 | fallback 逐页 `getText` 后不 close，内存峰值偏高 | `try/finally` 里 `pageHandle.close?.()` |
+| 状态文件位置写死 | hybrid 的 `.hybrid-state.json` 不跟随配置的缓存目录 | 配置项 `cacheDir`（默认 `~/.dsh/pdf-cache`） |
+| token 估算（前一批） | 一律 0.6 系数 | 按脚本占比：CJK 0.6、其余 0.25 |
+
+测试 115 → 117。
