@@ -11,7 +11,11 @@ import { createHybridEngine, resolveHybridConfig, probePort, backendUrlOf } from
 import { createFastEngine, resolveFastConfig } from '../lib/fast.js'
 import { computeMetrics } from '../lib/index.js'
 
-const PDF = process.argv[2] ?? 'Downloads/补丁安装说明.pdf'
+const PDF = process.argv[2]
+if (PDF === undefined) {
+  console.error('用法：node scripts/verify-hybrid.mjs <pdf 路径> [后端可执行文件]')
+  process.exit(1)
+}
 const BACKEND = process.argv[3] ?? 'opendataloader-pdf-hybrid'
 const port = 5002
 const ctx = { tools: { register: () => () => {} }, get: () => undefined }

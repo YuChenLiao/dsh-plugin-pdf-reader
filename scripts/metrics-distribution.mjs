@@ -11,13 +11,12 @@ import { computeMetrics } from '../lib/index.js'
 import { sha256File } from '../lib/index.js'
 
 const SAMPLE_DIR = 'fixtures/samples'
-const LOCAL = [
-  'Downloads/local-1.pdf',
-  'Downloads/local-2.pdf',
-  'Downloads/公司盖章离职证明.pdf',
-  'Downloads/补丁安装说明.pdf',
-  'Downloads/document.pdf',
-]
+// 本地真实样本走环境变量，仓库里不放任何个人路径与文件名：
+//   PDF_SAMPLES="/path/a.pdf;/path/b.pdf" node scripts/metrics-distribution.mjs
+const LOCAL = (process.env.PDF_SAMPLES ?? '')
+  .split(';')
+  .map((item) => item.trim())
+  .filter((item) => item !== '')
 
 function classify(path) {
   const name = path.replace(/\\/g, '/').split('/').pop()
@@ -38,6 +37,12 @@ for (const path of [...localFiles, ...downloaded]) {
   if (!seen.has(sha)) seen.set(sha, path)
 }
 const files = [...seen.values()]
+// 本地样本的真实文件名可能含个人信息，表格里一律用序号代替
+const displayName = (path) => {
+  const base = path.split(/[\\/]/).pop()
+  const index = localFiles.indexOf(path)
+  return index >= 0 ? `local-${index + 1}.pdf` : base
+}
 
 const ctx = { tools: { register: () => () => {} }, get: () => undefined }
 const engine = createFastEngine(ctx, resolveFastConfig({ enabled: true }))
@@ -54,11 +59,11 @@ for (const path of files) {
     const result = await engine.convert({ absPath: path, signal: new AbortController().signal })
     const metrics = computeMetrics(result.markdown)
     const ms = Math.round(performance.now() - started)
-    rows.push({ path: path.split(/[\\/]/).pop(), klass: classify(path), ms, metrics })
-    console.log(`${metrics.pages}页 ${metrics.chars}字符 ${ms}ms  ${path.split(/[\\/]/).pop()}`)
+    rows.push({ path: displayName(path), klass: classify(path), ms, metrics })
+    console.log(`${metrics.pages}页 ${metrics.chars}字符 ${ms}ms  ${displayName(path)}`)
   } catch (error) {
-    rows.push({ path: path.split(/[\\/]/).pop(), klass: classify(path), error: `${error.kind ?? 'error'}: ${error.message.slice(0, 80)}` })
-    console.log(`失败 ${path}: ${error.message.slice(0, 80)}`)
+    rows.push({ path: displayName(path), klass: classify(path), error: `${error.kind ?? 'error'}: ${error.message.slice(0, 80)}` })
+    console.log(`失败 ${displayName(path)}: ${error.message.slice(0, 80)}`)
   }
 }
 

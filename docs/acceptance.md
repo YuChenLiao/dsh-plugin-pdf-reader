@@ -28,7 +28,7 @@ pdf_read(handle=b27982854e2a, page=13):
 b27982854e2a · 第 13 页（共 43 页，3393 字符）
 <!-- PAGE 13 -->
 
-pdf_extract(Downloads/补丁安装说明.pdf):
+pdf_extract(~/Downloads/<中文说明>.pdf):
 pdf ok · 6页 · 1034字符 · 2表格 · 14标题 · engine=fast
 handle=5072f85cb096
 
@@ -114,7 +114,7 @@ done status=ok dur=25.3s per_page=25.35s pages=1 ocr=24.1s layout=1.0s parse=0.0
 ```
 pdf_ping   → pong · java=17 (java)
              引擎: fast:ok · fallback:ok
-pdf_extract(Downloads/补丁安装说明.pdf)
+pdf_extract(~/Downloads/<中文说明>.pdf)
            → pdf ok · 6页 · 1034字符 · 2表格 · 14标题 · engine=fast
              正文全文进上下文（inline 路径正常工作）
 pdf_extract(fixtures/samples/arxiv-2201.11903v6.pdf)
