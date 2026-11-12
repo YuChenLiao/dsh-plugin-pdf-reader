@@ -70,3 +70,16 @@ test('pdf_ping 返回 pong 与各引擎状态（java 不可用时如实报错）
   assert.match(blocks[0].text, /fast:关闭/)
   assert.ok(!blocks[0].text.includes('hybrid='), '静态优先级表不应出现在 render 里')
 })
+
+test('未知配置项给出警告而不是静默忽略', () => {
+  const { ctx } = fakeCtx()
+  const warnings = []
+  const original = console.warn
+  console.warn = (...args) => warnings.push(args.join(' '))
+  try {
+    apply(ctx, { inlineLimit: 100, inlineLimt: 5000 })
+  } finally {
+    console.warn = original
+  }
+  assert.ok(warnings.some((line) => line.includes('inlineLimt')), '拼错的键应被指出来')
+})

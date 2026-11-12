@@ -1,6 +1,8 @@
 /** `pdf_read`：只读缓存，按页 / 区间取正文，不重新转换。 */
-import { expandHome, readEntry, recentHandles } from '../cache.ts'
-import { splitPagesWithNumbers, type PageSlice } from '../metrics.ts'
+import { readEntry, recentHandles } from '../cache.ts'
+import { expandHome } from '../args.ts'
+import { splitPagesWithNumbers, type PageSlice } from '../pages.ts'
+import { asNumber } from '../args.ts'
 import type { PluginConfig } from '../plugin.ts'
 import type { ToolDefinitionLike } from '../ctx.ts'
 
@@ -45,20 +47,6 @@ const schema = {
   required: ['handle', 'from_page', 'to_page', 'pages', 'chars', 'truncated', 'content'],
 }
 
-/**
- * 模型边界上的数字可能是字符串（实测 tool 调用里 `page: 13` 会以 "13" 到达），
- * 统一在这里做强转，避免整条逻辑静默退化成"全篇"。
- * @param value - 原始参数。
- * @returns 有限数字或 undefined。
- */
-export function asNumber(value: unknown): number | undefined {
-  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined
-  if (typeof value === 'string' && value.trim() !== '') {
-    const parsed = Number(value.trim())
-    return Number.isFinite(parsed) ? parsed : undefined
-  }
-  return undefined
-}
 
 /**
  * 按原始页码挑出要交付的页。

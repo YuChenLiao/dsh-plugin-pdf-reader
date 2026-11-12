@@ -16,9 +16,7 @@ export type { PingValue } from './tools/ping.ts'
 export { createExtractTool } from './tools/extract.ts'
 export { createReadTool } from './tools/read.ts'
 export type { ReadValue } from './tools/read.ts'
-export { createFallbackEngine, resolveFallbackConfig, resolvePdfiumVersion } from './engines/fallback.ts'
 export { pageMarker, parsePageRange } from './upstream.ts'
-export { createHybridEngine, readHybridState, resolveHybridConfig, backendUrlOf, backendArgv, probePort } from './engines/hybrid.ts'
 export type { ExtractValue } from './tools/extract.ts'
 export { parseJavaVersion, detectJava } from './probe/java.ts'
 export { runProcess } from './proc.ts'
@@ -92,6 +90,12 @@ export function resolveConfig(raw: unknown): PluginConfig {
     if (inlineLimit > INLINE_HARD_CEILING) {
       throw new ConfigError(`config.inlineLimit 上限是 ${INLINE_HARD_CEILING} 字符：超过它会被 dsh 的 tool-result-pruner 截成"头+尾"并静默丢正文`)
     }
+  }
+  const known = ['enabled', 'inlineLimit', 'cacheDir', 'judgeEnabled', 'javaBinary']
+  const unknown = Object.keys(input).filter((key) => !known.includes(key))
+  if (unknown.length > 0) {
+    // 拼错的键原来会被静默忽略，配置看起来生效其实没有
+    console.warn(`[pdf-reader] 忽略未知配置项：${unknown.join(', ')}（可用：${known.join(', ')}）`)
   }
   return {
     enabled: asBoolean(input.enabled, 'enabled', CONFIG_DEFAULTS.enabled),

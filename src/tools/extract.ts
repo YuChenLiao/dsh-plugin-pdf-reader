@@ -1,11 +1,10 @@
 /** `pdf_extract`：转换 + 指标 + 三档判定；小文件返正文，大文件只返判定块。 */
 import { stat } from 'node:fs/promises'
-import { isAbsolute, resolve as resolvePath } from 'node:path'
 import { cacheKey, expandHome, lookupFile, paramsSignature, sha256File, writeEntry, type CacheMeta, type CacheParams } from '../cache.ts'
 import { computeMetrics, estimateTokens, splitPagesWithNumbers, type Metrics } from '../metrics.ts'
 import { judge } from '../verdict.ts'
-import { PAGE_SEPARATOR } from '../upstream.ts'
-import { asNumber } from './read.ts'
+import { PAGE_SEPARATOR } from '../pages.ts'
+import { asNumber, resolveInputPath } from '../args.ts'
 import type { EngineError, EngineRegistry } from '../engines.ts'
 import type { PluginConfig } from '../plugin.ts'
 import type { Ctx, ToolDefinitionLike } from '../ctx.ts'
@@ -58,11 +57,6 @@ const schema = {
   required: ['mode', 'engine', 'degraded', 'handle', 'verdict', 'pages', 'chars'],
 }
 
-/** 解析输入路径：支持绝对路径、工作区相对路径、`~` 开头。 */
-export function resolveInputPath(input: string): string {
-  if (input.startsWith('~')) return expandHome(input)
-  return isAbsolute(input) ? input : resolvePath(process.cwd(), input)
-}
 
 /**
  * inline 判定必须用**交付尺寸**（含页标记的 body 长度），而不是剥离标记后的字符数：
@@ -84,7 +78,7 @@ function toValue(meta: Pick<CacheMeta, 'handle' | 'engine' | 'degraded' | 'verdi
     pages: meta.pages,
     chars: meta.chars,
   }
-  if (mode === 'spilled') value.tokens_est = estimateTokens(meta.chars)
+  if (mode === 'spilled') value.tokens_est = estimateTokens(body)
   if (meta.stats !== undefined) value.stats = meta.stats
   if (meta.issues !== undefined && meta.issues.length > 0) value.issues = meta.issues
   if (value.verdict === 'suspect') {
@@ -218,6 +212,7 @@ export function createExtractTool(deps: ExtractDeps): ToolDefinitionLike {
           head_cjk_ratio: round(metrics.head_cjk_ratio),
           nonspace_chars: metrics.nonspace_chars,
           first_empty_page: metrics.first_empty_page,
+          image_only_hint: metrics.image_only_hint ? 1 : 0,
           last_page_ratio: round(metrics.last_page_ratio),
           tables: metrics.tables,
           headings: metrics.headings,

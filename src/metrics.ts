@@ -3,9 +3,10 @@
  * Markdown 自带结构标记：`#` 标题、`|` 表格、`- `/`1. ` 列表、页分隔符分页。
  */
 
+import { PAGE_MARK_PATTERN as PAGE_SEPARATOR, splitPages, splitPagesWithNumbers } from './pages.ts'
+
 const CJK = /[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\u3040-\u30FF\uAC00-\uD7AF]/
 const CJK_ALL = /[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\u3040-\u30FF\uAC00-\uD7AF]/g
-const PAGE_SEPARATOR = /<!--\s*PAGE\s+\d+\s*-->/g
 
 export interface Metrics {
   /** 字符总数（不含页分隔符）。 */
@@ -33,44 +34,6 @@ export interface Metrics {
   tables: number
   headings: number
   image_only_hint: boolean
-}
-
-/** 一页正文与它的**原始页码**。页码来自分隔符，不是数组下标。 */
-export interface PageSlice {
-  page: number
-  text: string
-}
-
-const PAGE_MARK = /<!--\s*PAGE\s+(\d+)\s*-->/g
-
-/**
- * 按页分隔符切页，保留每个分隔符里的原始页码。
- *
- * 页码必须从标记里读：`--pages 5-8` 提取出的正文里，第一条标记是 `PAGE 5`，
- * 它的数组下标是 0。早先的实现按位置重编号，导致 `pdf_read(page=1)` 读到第 5 页
- * 却标成第 1 页（code review C1）。
- * @param markdown - 含页分隔符的 Markdown。
- * @returns 按出现顺序排列的页与原始页码。
- */
-export function splitPagesWithNumbers(markdown: string): PageSlice[] {
-  const marks: Array<{ page: number; start: number; end: number }> = []
-  PAGE_MARK.lastIndex = 0
-  for (let match = PAGE_MARK.exec(markdown); match !== null; match = PAGE_MARK.exec(markdown)) {
-    marks.push({ page: Number.parseInt(match[1] as string, 10), start: match.index, end: match.index + match[0].length })
-  }
-  if (marks.length === 0) return [{ page: 1, text: markdown }]
-  const slices: PageSlice[] = []
-  for (let index = 0; index < marks.length; index += 1) {
-    const mark = marks[index] as { page: number; end: number }
-    const next = marks[index + 1]
-    slices.push({ page: mark.page, text: markdown.slice(mark.end, next === undefined ? markdown.length : next.start) })
-  }
-  return slices
-}
-
-/** 按页分隔符切页，去掉分隔符本身。页码信息请用 {@link splitPagesWithNumbers}。 */
-export function splitPages(markdown: string): string[] {
-  return splitPagesWithNumbers(markdown).map((slice) => slice.text)
 }
 
 function ratio(part: number, whole: number): number {
@@ -163,9 +126,18 @@ export function computeMetrics(markdown: string): Metrics {
   }
 }
 
-/** 粗略 token 估算：中文约 0.6 token/字符（用于判定块展示，不参与判定）。 */
-export function estimateTokens(chars: number): number {
-  return Math.round(chars * 0.6)
+/**
+ * 粗略 token 估算：CJK 约 0.6 token/字符，其余约 0.25（≈4 字符/token，与宿主一致）。
+ * 只用于判定块展示，不参与判定。
+ * @param text - 正文。
+ * @returns 估算 token 数。
+ */
+export function estimateTokens(text: string): number {
+  const cjk = (text.match(CJK_ALL) ?? []).length
+  const rest = Math.max(0, text.length - cjk)
+  return Math.round(cjk * 0.6 + rest * 0.25)
 }
 
 export { CJK }
+export { splitPages, splitPagesWithNumbers }
+export type { PageSlice } from './pages.ts'

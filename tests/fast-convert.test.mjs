@@ -119,3 +119,16 @@ test('上游报 File or folder not found 时归类为 missing-file', () => {
   assert.equal(result.kind, 'missing-file')
   assert.match(result.message, /路径不存在/)
 })
+
+test('stdout 丢过开头（lossy）时拒绝交付，避免错页', async () => {
+  const engine = createFastEngine(
+    { tools: { register: () => () => {} } },
+    resolveFastConfig({}),
+    { jarOf: () => JAR, run: async () => ({ code: 0, stdout: '残片', stderr: '', stdoutLossy: true, timedOut: false, aborted: false }) },
+  )
+  await assert.rejects(engine.convert({ absPath: 'D:/a/b.pdf', signal: new AbortController().signal }), (error) => {
+    assert.equal(error.kind, 'engine-error')
+    assert.match(error.message, /开头已丢失/)
+    return true
+  })
+})

@@ -23,6 +23,8 @@ export interface RunResult {
   code: number | null
   stdout: string
   stderr: string
+  /** 采集窗口丢过开头（stdout 超过上限）：正文不可信，调用方必须拒绝。 */
+  stdoutLossy?: boolean
   timedOut: boolean
   aborted: boolean
 }
@@ -83,9 +85,17 @@ async function runViaService(service: SubprocessLike, spec: RunSpec): Promise<Ru
     }
     // 直系命令退出不等于整树静默；等 provider 证明范围清空，避免残留 java
     await handle.waitForExit().catch(() => false)
-    const stdout = handle.collected.stdout?.readFrom(0).text ?? ''
-    const stderr = handle.collected.stderr?.readFrom(0).text ?? ''
-    return { code, stdout, stderr, timedOut, aborted: spec.signal?.aborted === true }
+    const outRead = handle.collected.stdout?.readFrom(0)
+    const errRead = handle.collected.stderr?.readFrom(0)
+    return {
+      code,
+      stdout: outRead?.text ?? '',
+      stderr: errRead?.text ?? '',
+      // 采集窗口滑出尾部意味着**开头丢了**：正文会缺页、页码会错位，必须让调用方知道
+      stdoutLossy: outRead?.lossy === true,
+      timedOut,
+      aborted: spec.signal?.aborted === true,
+    }
   } finally {
     if (timer !== undefined) clearTimeout(timer)
     spec.signal?.removeEventListener('abort', abortOuter)
@@ -102,13 +112,24 @@ function runViaChildProcess(spec: RunSpec): Promise<RunResult> {
     const maxBytes = spec.maxBytes ?? DEFAULT_MAX_BYTES
     let stdout = ''
     let stderr = ''
+    let stdoutBytes = 0
+    let stderrBytes = 0
     let timedOut = false
-    const appendStdout = (chunk: Buffer): void => {
-      if (stdout.length < maxBytes) stdout += chunk.toString('utf8')
+    // 按字节计，而不是 UTF-16 长度：中文一个字符占 3 字节，按 .length 判会把上限放大约 3 倍
+    const append = (target: 'stdout' | 'stderr', chunk: Buffer): void => {
+      const used = target === 'stdout' ? stdoutBytes : stderrBytes
+      if (used >= maxBytes) return
+      const text = chunk.toString('utf8')
+      if (target === 'stdout') {
+        stdout += text
+        stdoutBytes += chunk.length
+      } else {
+        stderr += text
+        stderrBytes += chunk.length
+      }
     }
-    const appendStderr = (chunk: Buffer): void => {
-      if (stderr.length < maxBytes) stderr += chunk.toString('utf8')
-    }
+    const appendStdout = (chunk: Buffer): void => append('stdout', chunk)
+    const appendStderr = (chunk: Buffer): void => append('stderr', chunk)
     child.stdout?.on('data', appendStdout)
     child.stderr?.on('data', appendStderr)
 
@@ -132,7 +153,7 @@ function runViaChildProcess(spec: RunSpec): Promise<RunResult> {
     child.on('close', (code) => {
       if (timer !== undefined) clearTimeout(timer)
       spec.signal?.removeEventListener('abort', abortOuter)
-      resolve({ code, stdout, stderr, timedOut, aborted: spec.signal?.aborted === true })
+      resolve({ code, stdout, stderr, stdoutLossy: false, timedOut, aborted: spec.signal?.aborted === true })
     })
   })
 }

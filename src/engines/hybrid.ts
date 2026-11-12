@@ -243,6 +243,10 @@ export function createHybridEngine(ctx: Ctx, cfg: HybridConfig, deps: HybridDeps
         const failure = classifyFailure(result)
         throw new EngineError(failure.kind, failure.message)
       }
+      // 采集窗口溢出会丢掉 stdout 开头：正文缺页、页码错位，不能当成功结果交付
+      if (result.stdoutLossy === true) {
+        throw new EngineError('engine-error', 'hybrid 引擎输出超过采集上限，开头已丢失；请用 pages 分段提取')
+      }
       if (result.stdout.trim() === '') throw new EngineError('engine-error', '转换成功但没有任何输出（疑似扫描件或空文档）')
       return { markdown: result.stdout, engine: 'hybrid', engineVersion: UPSTREAM_VERSION, degraded: false }
     },

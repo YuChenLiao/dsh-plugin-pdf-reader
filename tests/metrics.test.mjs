@@ -61,6 +61,10 @@ test('页字符数变异系数：等长页为 0', () => {
   assert.equal(metrics.page_char_variance, 0)
 })
 
-test('estimateTokens 用 0.6 系数', () => {
-  assert.equal(estimateTokens(1000), 600)
+test('estimateTokens 按脚本占比估算：中文 0.6、其余 0.25', () => {
+  // 10 个汉字 → 6；10 个 ASCII → 2.5 → 3
+  assert.equal(estimateTokens('一二三四五六七八九十'), 6)
+  assert.equal(estimateTokens('abcdefghij'), 3)
+  // 混排：5 汉字 + 4 ASCII → 3 + 1 = 4
+  assert.equal(estimateTokens('一二三四五abcd'), 4)
 })
