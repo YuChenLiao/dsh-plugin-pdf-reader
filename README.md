@@ -11,7 +11,7 @@
 | 场景 | 现场写脚本 | 本插件 |
 | --- | --- | --- |
 | 小文件（4 页简历，2927 字符） | 576 字符脚本 + 首次运行报错（依赖解析不到）+ 修复重跑，**2–3 轮** | 1 次调用，1 轮；二次读同文件 **5ms** 命中缓存 |
-| 大文件（43 页论文，136800 字符） | 输出 ≈ **82080 token**，还会被 `tool-result-pruner` 截成"头 4096 + 尾 1024"，**中间正文静默丢失** | ≈ **40 token** 的判定块 + handle，正文按页读 |
+| 大文件（43 页论文，136800 字符） | 输出 ≈ **34000 token**，还会被 `tool-result-pruner` 截成"头 4096 + 尾 1024"，**中间正文静默丢失** | ≈ **40 token** 的判定块 + handle，正文按页读 |
 | 扫描件（8 页无文本层） | 16 字符，模型分不清"文件坏了"还是"本来没字"，容易反复试错 | 一轮给出 `suspect` +「疑似扫描件」+ 下一步建议 |
 
 真正的价值不在省 token（小文件只省约 10%），而在三件事：
@@ -52,7 +52,7 @@ dsh plugin --profile <profile> add link:<本地克隆路径>
 | --- | --- | --- |
 | `path` | string，必填 | 绝对路径、工作区相对路径，或 `~` 开头 |
 | `pages` | string | 页范围，如 `1-10`；页码是**原文页码**，不重编号 |
-| `inlineLimit` | number | 本次调用的字符上限，0 表示总是落盘 |
+| `inlineLimit` | number | 本次调用的字符上限，0 表示总是落盘。同样受 8192 硬顶约束，超过直接报错 |
 | `force` | boolean | 忽略缓存重新转换 |
 | `engine` | enum | `auto`（默认，fast → fallback）· `fast` · `fallback` · `hybrid` |
 
@@ -69,7 +69,7 @@ handle=bb0f6e32c936
 返回（大文件，正文不进上下文）：
 
 ```
-pdf ok · 43页 · 136800字符 · ~82080 tokens · 17表格 · 46标题 · engine=fast
+pdf ok · 43页 · 136800字符 · ~34370 tokens · 17表格 · 46标题 · engine=fast
 handle=b27982854e2a
 正文未进上下文：用 pdf_read 按页读取
 ```
@@ -89,13 +89,15 @@ handle=5f6c72428de7
 
 | 参数 | 类型 | 说明 |
 | --- | --- | --- |
-| `handle` | string，必填 | `pdf_extract` 返回的句柄 |
-| `page` | number | 单页（原文页码，1 起） |
-| `pageStart` / `pageEnd` | number | 页区间，含两端 |
-| `maxChars` | number | 字符上限，默认 20000 |
+| `handle` | string，必填 | `pdf_extract` 返回的句柄（12 位十六进制，格式不对直接拒绝） |
+| `page` | number | 单页，**原文页码**（不是数组下标） |
+| `pageStart` / `pageEnd` | number | 页区间，含两端，同样是原文页码 |
+| `maxChars` | number | 字符上限，默认 `min(inlineLimit, 8000)`；超过 8192 会被 pruner 裁剪 |
 | `offset` | number | 从所选范围第几个字符开始；单页被截断时用它续读 |
 
-单页比 `maxChars` 长时会返回 `next_offset`，并在输出里写明 `用 offset=N 续读`，不会出现"反复读同一段开头"的死循环。
+**页码来自正文里的页标记**，不是位置序号。`pdf_extract(pages='5-8')` 得到的 handle 只含第 5–8 页，`pdf_read(page=5)` 读第 5 页，`pdf_read(page=1)` 会明确报错并给出可用范围 —— 不会静默夹取到边界页。
+
+单页比 `maxChars` 长时返回 `next_offset`，输出里写明 `用 offset=N 续读`，不会出现"反复读同一段开头"的死循环。
 
 ### `pdf_ping`
 
@@ -147,29 +149,35 @@ config:
 | `inlineLimit` | `6000` | 入上下文字符上限。**硬顶 8192**：超过会被 dsh 的 `tool-result-pruner` 截成"头 4096 + 尾 1024"，中间正文静默消失，所以超过上限直接报错 |
 | `judgeEnabled` | `true` | 关闭后退回"只记录指标、不判定" |
 | `cacheDir` | `~/.dsh/pdf-cache` | 转换结果与指标落盘位置 |
-| `javaBinary` | `java` | fast 引擎使用的可执行文件 |
+| `javaBinary` | `java` | **仅 `pdf_ping` 探测 Java 版本用**；`/fast` 引擎有自己独立的 `javaBinary` |
 
 引擎组件：
 
 | 组件 | 字段 | 默认 |
 | --- | --- | --- |
 | `/fast` | `enabled` / `javaBinary` / `timeoutMs` | `true` / `java` / `120000` |
-| `/hybrid` | `enabled` / `acceptModelDownload` / `port` / `autoStart` / `hybridUrl` / `backendBinary` / `backendArgs` / `timeoutMs` / `startTimeoutMs` | `false` / `false` / `5002` / `true` / — / `opendataloader-pdf-hybrid` / `[]` / `600000` / `300000` |
+| `/hybrid` | `enabled` / `acceptModelDownload` / `port` / `autoStart` / `hybridUrl` / `backendBinary` / `backendArgs` / `cacheDir` / `timeoutMs` / `startTimeoutMs` | `false` / `false` / `5002` / `true` / — / `opendataloader-pdf-hybrid` / `[]` / `~/.dsh/pdf-cache` / `600000` / `300000` |
 | `/fallback` | `enabled` / `timeoutMs` | `true` / `60000` |
 
 ## 缓存与 handle
 
 ```
 ~/.dsh/pdf-cache/
-  <handle>/            12 位十六进制，= sha256(内容 + 引擎名 + 引擎版本 + pages + 分隔符) 前 12 位
-    body.md            转换后的 Markdown（含页分隔符）
+  <handle>/            12 位十六进制 = sha256(内容 + 引擎名 + 引擎版本 + 引擎指纹 + pages + 分隔符) 前 12 位
+    body.md            转换后的 Markdown（含页标记）
     meta.json          全部原始指标 + engine + engineVersion + degraded + cachedAt
+                       + pageNumbers（正文里出现的原始页码）+ bodyChars（含标记的交付尺寸）
     source.json        源文件路径、大小、mtime、sha256、参数
   index/<sha12>.json   按文件反查的多引擎索引
   index/_recent.json   最近用过的 handle
 ```
 
-**查缓存在引擎探测之前**：读文件算哈希 → 查索引 → 命中直接返回，不再起 JVM、连 `java -version` 都不跑。引擎指纹必须进键，否则切引擎会读到旧引擎的结果。
+**查缓存在引擎探测之前**：读文件算哈希 → 查索引 → 命中直接返回，不再起 JVM、连 `java -version` 都不跑。
+
+两条容易踩的约定：
+
+- **引擎指纹必须进键**，否则切引擎会读到旧引擎的结果；`engine='hybrid'` 这类显式请求还会再按引擎过滤一次索引，绝不会命中 `fast` 的旧条目。
+- **并发写是安全的**：临时文件名唯一、索引读改写串行化，同一进程内两个并发的 `pdf_extract` 不会互相覆盖或让调用失败。
 
 ## 质量判定
 
@@ -188,6 +196,8 @@ config:
 
 `fallback` 引擎只判 `failed`，不判 `suspect` —— 它的阅读顺序按 PDF 绘制顺序，行与占比类指标不可信。
 
+**只提取部分页时不判空页与末页**：`pdf_extract(pages='1-2')` 时 `empty_page_ratio` 与 `last_page_ratio` 反映的是所选范围而不是整份文档，拿它们判定会把正常文档误报成"疑似扫描件 / 疑似截断"。
+
 ## 已知限制
 
 | 项 | 说明 |
@@ -197,15 +207,19 @@ config:
 | 扫描件依赖 hybrid + OCR | fast/fallback 对无文本层 PDF 只能给 `suspect` |
 | 不做 OCR 之外的版面理解 | 无公式提取、无图表描述、无 tagged-PDF 结构树 |
 | `pdf_read` 的 `offset` 按字符切 | 不按块/句切，跨页续读要给 `pageStart/pageEnd` |
+| 单次交付上限 8192 字符 | 由宿主 `tool-result-pruner` 决定；插件把 `inlineLimit` 与 `pdf_read.maxChars` 都压在这条线下，超了就截断/落盘而不是让宿主悄悄裁掉中间 |
+| 超长 stdout 会被拒绝 | 提取结果超过采集上限（8MB）时插件报错而不是交付残缺正文 —— 残缺会导致缺页、页码错位 |
 
 ## 开发
 
 ```sh
 npm install
 npm run build      # esbuild → lib/{index,fast,hybrid,fallback}.js
-npm test           # node --test，104 个用例
+npm test           # 先 pretest 构建，再 node --test（117 个用例）
 npx tsc --noEmit   # 类型检查
 ```
+
+源码结构上，三个模块各自只做一件事：`src/pages.ts` 管页身份（分隔符、按页切分、页范围解析），`src/args.ts` 管模型边界参数（数字强转、路径解析），`src/engines.ts` 是引擎契约与注册表；工具层与引擎层只通过注册表交汇。
 
 辅助脚本：
 
