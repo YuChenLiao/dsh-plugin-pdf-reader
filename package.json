@@ -50,6 +50,14 @@
     "pdf"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YuChenLiao/dsh-plugin-pdf-reader.git"
+  },
+  "homepage": "https://github.com/YuChenLiao/dsh-plugin-pdf-reader#readme",
+  "bugs": {
+    "url": "https://github.com/YuChenLiao/dsh-plugin-pdf-reader/issues"
+  },
   "dependencies": {
     "@hyzyla/pdfium": "3.0.0",
     "@opendataloader/pdf": "2.5.20"

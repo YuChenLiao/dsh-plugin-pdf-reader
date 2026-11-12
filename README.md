@@ -22,24 +22,21 @@
 
 ## 安装
 
-### 桌面版（Electron 管理的 `desktop` profile）
-
-`dsh plugin --profile desktop add` 会被拒（该 profile 由应用独占管理），用宿主内的 plugin manager：
-
-```
-plugin_manager({ action: "install_bundle", target: "link:D:/dsh/dsh-plugin-pdf-reader" })
-```
-
-装完当场生效，无需重启。
-
-### 其他 profile
+装进任意 profile（把 `<仓库路径>` 换成本地克隆目录；Windows 上写成正斜杠或双反斜杠）：
 
 ```sh
-dsh plugin --profile memtest add D:/dsh/dsh-plugin-pdf-reader
-dsh --profile memtest --dump-config | grep pdf-reader   # 确认四条装载行
+git clone https://github.com/YuChenLiao/dsh-plugin-pdf-reader.git
+cd dsh-plugin-pdf-reader && npm install && npm run build
+
+dsh plugin --profile <profile> add <仓库路径>
+dsh --profile <profile> --dump-config | grep pdf-reader   # 确认四条装载行
 ```
 
-装完后 `lib/` 已由 `npm run build` 产出；profile 以 `link:` 引用，`main` 指向 `lib/index.js`。
+`<profile>` 用你实际运行的那个：桌面应用默认是 `desktop`，也可以用独立的测试 profile（如 `memtest`）先验。
+
+装完**重启 DSH**。`lib/` 由 `npm run build` 产出，profile 以 `link:` 引用本目录，`main` 指向 `lib/index.js`，所以构建产物必须在。
+
+> 如果 `add` 报权限类错误（例如提示 profile 被应用独占管理），先确认命令是在正常的用户 shell 里执行、且对该 profile 目录可写；这类报错来自执行环境的权限限制，不代表桌面版不能用标准命令安装。
 
 ## 工具
 
