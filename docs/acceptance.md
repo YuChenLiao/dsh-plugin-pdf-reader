@@ -203,3 +203,25 @@ pdf_extract(scan-8p.pdf) → pdf suspect · 8页 · 16字符
 | token 估算（前一批） | 一律 0.6 系数 | 按脚本占比：CJK 0.6、其余 0.25 |
 
 测试 115 → 117。
+
+## 2026-11-12 修复后完整回归（sandbox，独立进程）
+
+新代码 `v0.1.10` 装进独立沙箱实例（`sandbox_install` + `restart`），两轮对话 6+3 步，事件日志逐条核对：
+
+| 步骤 | 结果 |
+| --- | --- |
+| `pdf_ping` | `pong · java=17 (java)` / `fast:ok · fallback:ok` |
+| 中文 6 页（inline） | 正文完整进上下文 |
+| 扫描件 8 页 | `pdf suspect · 8页 · 16字符`，handle `a83f21808da1` |
+| 43 页论文（spilled） | `43页 · 136800字符 · ~34370 tokens`，正文 0 字符进上下文，handle `be26990ff1ae` |
+| 同一文件再提取 | handle 仍为 `be26990ff1ae`（缓存键稳定） |
+| `pages="5-8"` | `4页 · 16003字符`，handle `511a0813072f` |
+| `pdf_read(page=5)` | 返回 `<!-- PAGE 5 -->` 与第 5 页正文（页码来自标记，不再按位置重编号） |
+| `pdf_read(page=1)` | `page 1 不在已提取的页范围内（可用 5–8，共 4 页）` —— 报错而非静默夹取 |
+| `pdf_read(page=5, offset=150)` | 从第 150 字符续读，末尾提示 `offset=300`，与上一段首尾自然衔接 |
+
+进程状态：`alive: true`、`errors: []`。
+
+### token 估算的变化
+
+43 页英文论文的 `tokens_est` 从 `~82080` 变成 `~34370` —— 旧的 0.6 系数是按中文估的，对英文高估约 2.4 倍；现在 CJK 0.6、其余 0.25（≈4 字符/token）。
