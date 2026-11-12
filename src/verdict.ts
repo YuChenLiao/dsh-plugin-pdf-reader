@@ -79,7 +79,7 @@ const pct = (value: number): string => (value * 100).toFixed(2).replace(/\.?0+$/
  * @param judgeEnabled - 关闭时恒返回 unknown（阶段 2 行为）。
  * @returns 判定、分数与可读问题列表。
  */
-export function judge(metrics: Metrics, engine: EngineName, judgeEnabled = true): Judgment {
+export function judge(metrics: Metrics, engine: EngineName, judgeEnabled = true, partialRange = false): Judgment {
   if (!judgeEnabled) return { verdict: 'unknown', score: 0, issues: [] }
 
   const thresholds = thresholdsOf(engine)
@@ -127,12 +127,13 @@ export function judge(metrics: Metrics, engine: EngineName, judgeEnabled = true)
     score -= SUSPECT_WEIGHTS.single_char_line
     issues.push(`single_char_line_ratio ${pct(metrics.single_char_line_ratio)}：单字符行过多，疑似逐字断行`)
   }
-  if (metrics.empty_page_ratio > suspect.empty_page_ratio_max) {
+  // 只提取了部分页时，空页/末页反映的是所选范围而不是整份文档（code review I6）
+  if (!partialRange && metrics.empty_page_ratio > suspect.empty_page_ratio_max) {
     score -= SUSPECT_WEIGHTS.empty_pages
     issues.push(`empty_pages ${metrics.empty_pages}/${metrics.pages}：疑似扫描件，当前引擎没有文本层`)
   }
   const charsPerPage = metrics.pages === 0 ? 0 : metrics.chars / metrics.pages
-  if (charsPerPage >= suspect.last_page_min_chars_per_page && metrics.last_page_ratio < suspect.last_page_ratio_min) {
+  if (!partialRange && charsPerPage >= suspect.last_page_min_chars_per_page && metrics.last_page_ratio < suspect.last_page_ratio_min) {
     score -= SUSPECT_WEIGHTS.last_page
     issues.push(`last_page_ratio ${pct(metrics.last_page_ratio)}：末页几乎为空，疑似截断`)
   }

@@ -71,9 +71,15 @@ export function paramsSignature(params: CacheParams): string {
  * @param params - 转换参数。
  * @returns 12 位 handle，同时是缓存目录名。
  */
-export function cacheKey(fileSha256: string, engine: string, engineVersion: string, params: CacheParams): string {
+export function cacheKey(
+  fileSha256: string,
+  engine: string,
+  engineVersion: string,
+  params: CacheParams,
+  engineSignature = '',
+): string {
   return createHash('sha256')
-    .update(`${fileSha256}:${engine}:${engineVersion}:${paramsSignature(params)}`)
+    .update(`${fileSha256}:${engine}:${engineVersion}:${engineSignature}:${paramsSignature(params)}`)
     .digest('hex')
     .slice(0, HANDLE_LENGTH)
 }
@@ -106,11 +112,35 @@ async function readJson<T>(path: string): Promise<T | null> {
   }
 }
 
+let tempCounter = 0
+
+/** 同一路径的读改写串行化：并发 pdf_extract 否则会互相覆盖索引（code review I4）。 */
+const writeQueues = new Map<string, Promise<unknown>>()
+
+function serialize<T>(key: string, task: () => Promise<T>): Promise<T> {
+  const previous = writeQueues.get(key) ?? Promise.resolve()
+  const next = previous.then(task, task)
+  writeQueues.set(key, next.catch(() => undefined))
+  return next
+}
+
 async function writeJson(path: string, value: unknown): Promise<void> {
   await mkdir(join(path, '..'), { recursive: true })
-  const tmp = `${path}.tmp`
-  await writeFile(tmp, JSON.stringify(value, null, 2), 'utf8')
-  await rename(tmp, path)
+  const payload = JSON.stringify(value, null, 2)
+  // 唯一临时名：固定 `${path}.tmp` 会让并发写入互相 rename 掉（code review I4）
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    tempCounter += 1
+    const tmp = `${path}.${process.pid}.${tempCounter}.tmp`
+    try {
+      await writeFile(tmp, payload, 'utf8')
+      await rename(tmp, path)
+      return
+    } catch (error) {
+      const code = (error as { code?: string }).code
+      if (code !== 'ENOENT' && code !== 'EPERM' && code !== 'EBUSY') throw error
+    }
+  }
+  throw new Error(`无法写入 ${path}：重试 3 次仍失败`)
 }
 
 /**
@@ -142,12 +172,17 @@ export async function writeEntry(cacheDir: string, entry: { handle: string; body
     cachedAt: entry.meta.cachedAt,
   }
   const indexPath = fileIndexPath(cacheDir, entry.meta.fileSha256)
-  const index = (await readJson<FileIndex>(indexPath)) ?? { fileSha256: entry.meta.fileSha256, entries: [] }
-  index.entries = [...index.entries.filter((item) => item.handle !== ref.handle), ref]
-  await writeJson(indexPath, index)
+  await serialize(indexPath, async () => {
+    const index = (await readJson<FileIndex>(indexPath)) ?? { fileSha256: entry.meta.fileSha256, entries: [] }
+    index.entries = [...index.entries.filter((item) => item.handle !== ref.handle), ref]
+    await writeJson(indexPath, index)
+  })
 
-  const recent = (await readJson<CacheEntryRef[]>(recentPath(cacheDir))) ?? []
-  await writeJson(recentPath(cacheDir), [ref, ...recent.filter((item) => item.handle !== ref.handle)].slice(0, RECENT_LIMIT))
+  const recentFile = recentPath(cacheDir)
+  await serialize(recentFile, async () => {
+    const recent = (await readJson<CacheEntryRef[]>(recentFile)) ?? []
+    await writeJson(recentFile, [ref, ...recent.filter((item) => item.handle !== ref.handle)].slice(0, RECENT_LIMIT))
+  })
 }
 
 /**

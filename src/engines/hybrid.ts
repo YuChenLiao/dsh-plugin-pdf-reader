@@ -199,6 +199,8 @@ export function createHybridEngine(ctx: Ctx, cfg: HybridConfig, deps: HybridDeps
     // 实测 8–10s/页（扫描件 + OCR 约 25s/页）：只接受显式调用，不进自动链
     explicitOnly: true,
     version: UPSTREAM_VERSION,
+    // 换了后端参数（例如开 --force-ocr）就该是另一份缓存（code review I2）
+    cacheSignature: JSON.stringify({ url: backendUrlOf(cfg), args: cfg.backendArgs }),
     async available(signal): Promise<Availability> {
       if (!cfg.enabled) return { ok: false, reason: '组件已关闭（默认关闭）' }
       if (!cfg.acceptModelDownload) return { ok: false, reason: '未同意模型下载' }
@@ -244,12 +246,13 @@ export function createHybridEngine(ctx: Ctx, cfg: HybridConfig, deps: HybridDeps
       if (result.stdout.trim() === '') throw new EngineError('engine-error', '转换成功但没有任何输出（疑似扫描件或空文档）')
       return { markdown: result.stdout, engine: 'hybrid', engineVersion: UPSTREAM_VERSION, degraded: false }
     },
-    /** 供工具层 dispose 时收尾：停掉自己拉起的后端。 */
+    /** 注册表在卸载本引擎时调用：停掉自己拉起的后端（code review I3）。 */
     dispose() {
       backend?.stop()
       backend = null
+      starting = null
     },
-  } as PdfEngine & { dispose(): void }
+  }
 }
 
 /**

@@ -183,10 +183,11 @@ export function createExtractTool(deps: ExtractDeps): ToolDefinitionLike {
         : await deps.registry.selectNamed(explicitEngine, exec.signal)
       const converted = await engine.convert({ absPath, ...(params.pages === undefined ? {} : { pages: params.pages }), signal: exec.signal })
       const metrics: Metrics = computeMetrics(converted.markdown)
-      const judgment = judge(metrics, converted.engine, deps.config.judgeEnabled)
+      // 只提取了部分页时，空页/末页类指标反映的是所选范围而不是整份文档，判它会误报
+      const judgment = judge(metrics, converted.engine, deps.config.judgeEnabled, params.pages !== undefined)
       const pageNumbers = splitPagesWithNumbers(converted.markdown).map((slice) => slice.page)
 
-      const handle = cacheKey(fileSha256, converted.engine, converted.engineVersion, params)
+      const handle = cacheKey(fileSha256, converted.engine, converted.engineVersion, params, engine.cacheSignature ?? '')
       const meta: CacheMeta = {
         handle,
         engine: converted.engine,

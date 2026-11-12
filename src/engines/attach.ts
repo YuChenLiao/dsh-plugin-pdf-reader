@@ -11,6 +11,9 @@ import type { EngineRegistry, PdfEngine } from '../engines.ts'
  * @param make - 引擎工厂，只在注册成功时调用。
  */
 export function attachEngine(ctx: Ctx, make: () => PdfEngine): void {
+  let disposeEngine: (() => void) | null = null
+  let timer: ReturnType<typeof setInterval> | null = null
+
   const registryOf = (): EngineRegistry | undefined => {
     const candidate = ctx.get?.('pdfEngines')
     if (candidate !== null && typeof candidate === 'object' && typeof (candidate as EngineRegistry).register === 'function') {
@@ -21,24 +24,35 @@ export function attachEngine(ctx: Ctx, make: () => PdfEngine): void {
 
   const registry = registryOf()
   if (registry !== undefined) {
-    registry.register(make())
+    disposeEngine = registry.register(make())
+    ctx.effect?.(() => () => disposeEngine?.())
     return
   }
 
   let tries = 0
-  const timer = setInterval(() => {
+  timer = setInterval(() => {
     tries += 1
     const late = registryOf()
     if (late !== undefined) {
-      clearInterval(timer)
-      late.register(make())
+      if (timer !== null) clearInterval(timer)
+      timer = null
+      disposeEngine = late.register(make())
       return
     }
     if (tries >= 20) {
-      clearInterval(timer)
+      if (timer !== null) clearInterval(timer)
+      timer = null
       const log = typeof ctx.logger === 'function' ? (ctx.logger as (s: string) => { warn(...a: unknown[]): void } | undefined)('pdf-reader') : undefined
       log?.warn('未找到 ctx.pdfEngines：工具层组件没有装载，本引擎不生效')
     }
   }, 100)
   timer.unref?.()
+
+  // 轮询窗口内的卸载也必须清掉定时器，否则回调跑在已卸载的上下文里
+  ctx.effect?.(() => () => {
+    if (timer !== null) clearInterval(timer)
+    timer = null
+    disposeEngine?.()
+    disposeEngine = null
+  })
 }

@@ -57,6 +57,13 @@ export interface PdfEngine {
   readonly priority: number
   readonly version: string
   /**
+   * 额外进缓存键的指纹（例如 hybrid 的后端参数/地址）。
+   * 不参与的话，开了 `--force-ocr` 仍会命中旧的非 OCR 结果（code review I2）。
+   */
+  readonly cacheSignature?: string
+  /** 卸载时调用：停掉自己拉起的后端等（code review I3）。 */
+  dispose?(): void
+  /**
    * 只按名字显式调用，不参与自动选择链。
    * hybrid 用它：真机实测 8–10s/页（扫描件 + OCR 约 25s/页），放进默认链等于每次慢两个数量级。
    */
@@ -126,14 +133,20 @@ export function createEngineRegistry(availabilityRetryMs = 60_000): EngineRegist
 
   return {
     register(engine) {
-      if (engines.has(engine.name)) throw new Error(`引擎 "${engine.name}" 已注册`)
+      // 同名替换而不是抛错：热重载时旧实例可能还没卸载完，
+      // 抛错会发生在 timer 回调里直接掀翻宿主（code review I3）
+      const previous = engines.get(engine.name)
+      if (previous !== undefined && previous !== engine) previous.dispose?.()
       engines.set(engine.name, engine)
       cache.delete(engine.name)
       inflight.delete(engine.name)
       return () => {
+        // 只移除自己这一份：晚到的旧 disposer 不能把新实例摘掉
+        if (engines.get(engine.name) !== engine) return
         engines.delete(engine.name)
         cache.delete(engine.name)
         inflight.delete(engine.name)
+        engine.dispose?.()
       }
     },
     list() {

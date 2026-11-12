@@ -112,11 +112,26 @@ export function apply(ctx: Ctx, config: unknown): void {
   if (!cfg.enabled) return
 
   const registry: EngineRegistry = createEngineRegistry()
-  ctx.provide?.('pdfEngines', registry)
+  const disposers: Array<() => void> = []
 
-  ctx.tools.register(createPingTool({ ctx, registry, javaBinary: cfg.javaBinary }))
-  ctx.tools.register(createExtractTool({ ctx, registry, config: cfg }))
-  ctx.tools.register(createReadTool({ config: cfg }))
+  const disposeProvide = ctx.provide?.('pdfEngines', registry)
+  if (typeof disposeProvide === 'function') disposers.push(disposeProvide)
+  disposers.push(ctx.tools.register(createPingTool({ ctx, registry, javaBinary: cfg.javaBinary })))
+  disposers.push(ctx.tools.register(createExtractTool({ ctx, registry, config: cfg })))
+  disposers.push(ctx.tools.register(createReadTool({ config: cfg })))
+
+  // 卸载/热重载时撤销注册：否则重新装载会撞上"工具已注册"或残留引擎（code review I3）
+  const teardown = (): void => {
+    for (const dispose of disposers.reverse()) {
+      try {
+        dispose()
+      } catch {
+        // 卸载阶段的失败不该阻断其余清理
+      }
+    }
+    disposers.length = 0
+  }
+  if (typeof ctx.effect === 'function') ctx.effect(() => teardown)
 
   const logger = typeof ctx.logger === 'function'
     ? (ctx.logger as (scope: string) => { info(...a: unknown[]): void } | undefined)('pdf-reader')

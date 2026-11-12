@@ -73,10 +73,16 @@ test('注销后引擎从列表移除且可用于重载', async () => {
   assert.equal((await registry.select()).name, 'fast')
 })
 
-test('重复注册同名引擎抛错', () => {
+test('重复注册同名引擎：替换旧实例并销毁它，不抛错', async () => {
   const registry = createEngineRegistry()
-  registry.register(engine('fast', 20, true))
-  assert.throws(() => registry.register(engine('fast', 20, true)), /已注册/)
+  let disposed = 0
+  const first = { ...engine('fast', 20, true), dispose: () => { disposed += 1 } }
+  registry.register(first)
+  const disposeSecond = registry.register(engine('fast', 20, true))
+  assert.equal(disposed, 1, '被替换的实例要销毁，避免后端/定时器泄漏')
+  // 晚到的旧 disposer 不能把新实例摘掉
+  disposeSecond()
+  await assert.rejects(registry.select(), /没有可用引擎/)
 })
 
 test('probe() 汇总每个引擎的可用性与原因', async () => {
